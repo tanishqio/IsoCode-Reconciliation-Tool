@@ -1,1 +1,6 @@
-export { formatPaise, groupIndian, type FormatPaiseOptions } from "./format-paise";
+export {
+  formatRupees,
+  groupIndian,
+  isNegativeAmount,
+  type FormatRupeesOptions,
+} from "./format-rupees";
