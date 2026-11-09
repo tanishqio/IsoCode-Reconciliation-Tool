@@ -8,9 +8,23 @@ import type { Aggregates, OrderFacts, Settings } from "./settle.js";
 // (no ID, an unknown ID, or an ID shared by several orders) are left for the review queue (Part 8).
 // Lines already linked (EXACT) or accepted by a person (ACCEPTED) are never changed here.
 
+const LINKED_TABLES = [
+  "customer_orders",
+  "settlement_lines",
+  "cod_remittance_lines",
+  "freight_lines",
+  "return_scans",
+] as const;
+
 /** Links unmatched lines to orders. Returns how many lines were linked in this run. */
 export async function linkLines(prisma: PrismaClient): Promise<number> {
   let linked = 0;
+  // Fresh uploads leave stale statistics: the planner then expects almost no UNMATCHED lines and
+  // picks a nested loop that repeats the order-ID aggregate once per line (measured: 100,000 orders
+  // ran for more than 10 minutes). Refreshing the statistics first keeps the plan a hash join.
+  for (const table of LINKED_TABLES) {
+    await prisma.$executeRawUnsafe(`ANALYZE ${table}`);
+  }
   // Settlement lines belong to a channel, and (channel, order ID) is unique.
   linked += await prisma.$executeRawUnsafe(`
     UPDATE settlement_lines l SET "orderPk" = o.id, "matchStatus" = 'EXACT'
@@ -162,4 +176,16 @@ export async function loadSettings(
     returnWindowDays: row.returnWindowDays,
     isSampleData: row.isSampleData,
   };
+}
+
+/** Orders that have at least one line a person linked in the review queue (Part 8). */
+export async function loadReviewAccepted(prisma: PrismaClient): Promise<Set<string>> {
+  const rows = await prisma.$queryRawUnsafe<{ orderPk: string }[]>(`
+    SELECT DISTINCT "orderPk"::text AS "orderPk" FROM (
+      SELECT "orderPk" FROM settlement_lines WHERE "matchStatus" = 'ACCEPTED' AND "orderPk" IS NOT NULL
+      UNION ALL SELECT "orderPk" FROM cod_remittance_lines WHERE "matchStatus" = 'ACCEPTED' AND "orderPk" IS NOT NULL
+      UNION ALL SELECT "orderPk" FROM freight_lines WHERE "matchStatus" = 'ACCEPTED' AND "orderPk" IS NOT NULL
+      UNION ALL SELECT "orderPk" FROM return_scans WHERE "matchStatus" = 'ACCEPTED' AND "orderPk" IS NOT NULL
+    ) accepted`);
+  return new Set(rows.map((row) => row.orderPk));
 }

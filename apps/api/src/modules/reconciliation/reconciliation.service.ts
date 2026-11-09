@@ -25,23 +25,28 @@ const money = (value: { toFixed(digits: number): string } | null): string | null
 
 export type ReconciliationService = ReturnType<typeof createReconciliationService>;
 
-/** Queues a recalculation unless one is already waiting. Safe to call after every change. */
-export async function enqueueRecompute(
+/** Queues a background job of this type unless one of the same type is already waiting. */
+export async function enqueueJob(
   prisma: PrismaClient,
+  type: "RECOMPUTE_RESULTS" | "SUGGEST_MATCHES" | "BUILD_CLAIMS",
   userId: string,
+  entityType: string,
 ): Promise<{ jobId: string; alreadyQueued: boolean }> {
   const waiting = await prisma.processingJob.findFirst({
-    where: { type: "RECOMPUTE_RESULTS", status: "QUEUED" },
+    where: { type, status: "QUEUED" },
     select: { id: true },
   });
   if (waiting) return { jobId: waiting.id, alreadyQueued: true };
   const job = await prisma.processingJob.create({
-    data: { type: "RECOMPUTE_RESULTS", entityType: "ORDER_RESULTS", createdById: userId },
+    data: { type, entityType, createdById: userId },
     select: { id: true },
   });
   return { jobId: job.id, alreadyQueued: false };
 }
 
+/** Queues a recalculation unless one is already waiting. Safe to call after every change. */
+export const enqueueRecompute = (prisma: PrismaClient, userId: string) =>
+  enqueueJob(prisma, "RECOMPUTE_RESULTS", userId, "ORDER_RESULTS");
 export function createReconciliationService({ prisma }: { prisma: PrismaClient }) {
   async function status() {
     const [job, latest, total, settings] = await Promise.all([

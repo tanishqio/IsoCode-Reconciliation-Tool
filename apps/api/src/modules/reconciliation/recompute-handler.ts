@@ -2,7 +2,8 @@ import type { PrismaClient } from "../../../generated/prisma/client.js";
 import type { JobHandler } from "../../jobs/job-types.js";
 import { pickRateCard, type CalcCard, type CalcRule } from "../rate-cards/expected-amount.js";
 import { decimalToPaise, paiseToAmount } from "../rate-cards/money.js";
-import { dataAsOf, linkLines, loadOrders, loadSettings } from "./matching.js";
+import { dataAsOf, linkLines, loadOrders, loadReviewAccepted, loadSettings } from "./matching.js";
+import { enqueueJob } from "./reconciliation.service.js";
 import { isReturned, settleOrder } from "./settle.js";
 
 const BATCH_SIZE = 5000;
@@ -22,11 +23,12 @@ export function createRecomputeHandler(prisma: PrismaClient): JobHandler {
     await linkLines(prisma);
 
     await setStage("calculating", 25);
-    const [settings, asOf, orders, cards] = await Promise.all([
+    const [settings, asOf, orders, cards, accepted] = await Promise.all([
       loadSettings(prisma),
       dataAsOf(prisma),
       loadOrders(prisma),
       prisma.rateCard.findMany({ include: { rules: { orderBy: { sortOrder: "asc" } } } }),
+      loadReviewAccepted(prisma),
     ]);
 
     // Fees as the calculator wants them: money in whole paise. Built once per card.
@@ -76,7 +78,11 @@ export function createRecomputeHandler(prisma: PrismaClient): JobHandler {
         status: verdict.status,
         flags: verdict.flags,
         calcProblem: verdict.calcProblem,
-        matchMethod: verdict.matched ? "EXACT" : "NONE",
+        matchMethod: accepted.has(order.id)
+          ? "REVIEW_ACCEPTED"
+          : verdict.matched
+            ? "EXACT"
+            : "NONE",
         lineCounts: a.counts,
         dueDate: verdict.dueDate?.toISOString() ?? null,
         asOf: asOf.toISOString(),
@@ -116,5 +122,12 @@ export function createRecomputeHandler(prisma: PrismaClient): JobHandler {
       { timeout: TRANSACTION_TIMEOUT_MS, maxWait: 60_000 },
     );
     await setStage("finishing", 100);
+    // The results changed, so suggestions and claims must be looked at again (one of each at a time).
+    for (const [type, entityType] of [
+      ["SUGGEST_MATCHES", "MATCH_SUGGESTIONS"],
+      ["BUILD_CLAIMS", "CLAIMS"],
+    ] as const) {
+      await enqueueJob(prisma, type, job.createdById, entityType).catch(() => undefined);
+    }
   };
 }

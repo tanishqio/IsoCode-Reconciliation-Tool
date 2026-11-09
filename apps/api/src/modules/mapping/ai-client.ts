@@ -58,12 +58,17 @@ const SYSTEM_PROMPT =
   'Reply with JSON only: {"mapping":[{"field":"<field name>","column":"<column header or null>",' +
   '"confidence":"high|medium|low"}],"notes":"<short remark>"}.';
 
-/** Asks the AI service for a mapping. Throws AiUnavailableError for any problem. */
-export async function requestAiMapping(
+/**
+ * Sends one request to the AI service and returns the JSON object in its answer. Throws
+ * AiUnavailableError for any problem (not configured, no answer in time, an error status, or an
+ * answer that is not JSON). The caller checks the shape of the JSON.
+ */
+export async function requestAiJson(
   config: AiConfig,
-  input: AiMappingInput,
+  system: string,
+  user: unknown,
   fetchImpl: typeof fetch = fetch,
-): Promise<{ entries: AiMappingEntry[]; notes: string; model: string }> {
+): Promise<unknown> {
   if (config.provider === "none" || !config.apiKey) {
     throw new AiUnavailableError("No AI service is configured.");
   }
@@ -78,8 +83,8 @@ export async function requestAiMapping(
         temperature: 0,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: JSON.stringify(input) },
+          { role: "system", content: system },
+          { role: "user", content: JSON.stringify(user) },
         ],
       }),
       signal: AbortSignal.timeout(config.timeoutMs),
@@ -95,9 +100,22 @@ export async function requestAiMapping(
     const body = (await response.json()) as { choices?: { message?: { content?: string } }[] };
     const content = body.choices?.[0]?.message?.content;
     if (typeof content !== "string") throw new Error("no content");
-    const parsed = responseSchema.parse(JSON.parse(content));
-    return { entries: parsed.mapping, notes: parsed.notes ?? "", model: config.model };
+    return JSON.parse(content) as unknown;
   } catch {
     throw new AiUnavailableError("The AI service sent an answer that could not be understood.");
   }
+}
+
+/** Asks the AI service for a mapping. Throws AiUnavailableError for any problem. */
+export async function requestAiMapping(
+  config: AiConfig,
+  input: AiMappingInput,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ entries: AiMappingEntry[]; notes: string; model: string }> {
+  const json = await requestAiJson(config, SYSTEM_PROMPT, input, fetchImpl);
+  const parsed = responseSchema.safeParse(json);
+  if (!parsed.success) {
+    throw new AiUnavailableError("The AI service sent an answer that could not be understood.");
+  }
+  return { entries: parsed.data.mapping, notes: parsed.data.notes ?? "", model: config.model };
 }
