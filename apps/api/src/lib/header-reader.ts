@@ -28,7 +28,10 @@ export interface HeaderReadResult {
   warning: string | null;
 }
 
-function decodeCsv(buffer: Buffer, atEndOfFile: boolean): { text: string; isUtf16: boolean } {
+export function decodeCsv(
+  buffer: Buffer,
+  atEndOfFile: boolean,
+): { text: string; isUtf16: boolean } {
   const stream = !atEndOfFile;
   if (buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
     return {
@@ -58,7 +61,7 @@ function decodeCsv(buffer: Buffer, atEndOfFile: boolean): { text: string; isUtf1
   }
 }
 
-function extractFirstRecord(text: string, atEndOfFile: boolean): string | null {
+export function extractFirstRecord(text: string, atEndOfFile: boolean): string | null {
   let index = 0;
   while (index < text.length && (text.charAt(index) === "\r" || text.charAt(index) === "\n")) {
     index += 1;
@@ -73,7 +76,7 @@ function extractFirstRecord(text: string, atEndOfFile: boolean): string | null {
   return atEndOfFile ? text.slice(start) : null;
 }
 
-function detectDelimiter(record: string): string {
+export function detectDelimiter(record: string): string {
   const counts = new Map<string, number>(CSV_DELIMITERS.map((delimiter) => [delimiter, 0]));
   let inQuotes = false;
   for (const char of record) {

@@ -7,6 +7,7 @@ import { checkFileSignature, type SignatureResult } from "../../lib/file-signatu
 import { HeaderReadError, readHeaders } from "../../lib/header-reader.js";
 import { buildHeaderSignature } from "../../lib/header-signature.js";
 import { logger } from "../../lib/logger.js";
+import { findActiveMapping } from "../mapping/active-mapping.js";
 import {
   decodeCursor,
   encodeCursor,
@@ -43,6 +44,18 @@ export interface UploadedFileDto {
   detectedRowCount: number | null;
   uploadedAt: string;
   processedAt: string | null;
+  rowsAccepted: number | null;
+  rowsRejected: number | null;
+  rowsDuplicate: number | null;
+  /** The most recent processing job for this file, if one was ever queued. */
+  job: UploadJobDto | null;
+}
+
+export interface UploadJobDto {
+  status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
+  stage: string | null;
+  progressPct: number;
+  errorMessage: string | null;
 }
 
 export type FileResult =
@@ -98,7 +111,10 @@ const SIGNATURE_MESSAGES: Record<Exclude<SignatureResult, { ok: true }>["reason"
   SIGNATURE_MISMATCH: "The file content does not match its extension.",
 };
 
-export function toUploadedFileDto(row: UploadedFileRow): UploadedFileDto {
+export function toUploadedFileDto(
+  row: UploadedFileRow,
+  job: UploadJobDto | null = null,
+): UploadedFileDto {
   return {
     id: row.id,
     batchId: row.batchId,
@@ -113,6 +129,10 @@ export function toUploadedFileDto(row: UploadedFileRow): UploadedFileDto {
     detectedRowCount: row.detectedRowCount,
     uploadedAt: row.uploadedAt.toISOString(),
     processedAt: row.processedAt ? row.processedAt.toISOString() : null,
+    rowsAccepted: row.rowsAccepted,
+    rowsRejected: row.rowsRejected,
+    rowsDuplicate: row.rowsDuplicate,
+    job,
   };
 }
 
@@ -224,27 +244,49 @@ export function createUploadsService({ prisma, audit }: UploadsServiceDeps) {
     const storagePath = buildStoragePath(fileId, `.${signature.format.toLowerCase()}`);
     await moveIntoStorage(file.tempPath, env.UPLOAD_DIR, storagePath);
 
+    // A file with the same source, type and column names as an approved mapping is read with that
+    // mapping straight away. Any other file waits for a person to review a mapping (Part 4).
+    const headerSignature = buildHeaderSignature(header.headers);
+    const mapping = await findActiveMapping(prisma, item.sourceId, item.fileType, headerSignature);
+
     let row: UploadedFileRow;
     try {
-      row = await prisma.uploadedFile.create({
-        data: {
-          id: fileId,
-          batchId,
-          sourceId: item.sourceId,
-          fileType: item.fileType,
-          originalName: fileName,
-          storagePath,
-          sizeBytes: BigInt(file.sizeBytes),
-          format: signature.format,
-          sha256: file.sha256,
-          headerSignature: buildHeaderSignature(header.headers),
-          detectedRowCount: header.dataRowCount,
-          warning: header.warning,
-          status: "NEEDS_MAPPING",
-          uploadedById: userId,
-        },
-        include: fileInclude,
-      });
+      const data = {
+        id: fileId,
+        batchId,
+        sourceId: item.sourceId,
+        fileType: item.fileType,
+        originalName: fileName,
+        storagePath,
+        sizeBytes: BigInt(file.sizeBytes),
+        format: signature.format,
+        sha256: file.sha256,
+        headerSignature,
+        detectedRowCount: header.dataRowCount,
+        warning: header.warning,
+        uploadedById: userId,
+      };
+      row = mapping
+        ? await prisma.$transaction(async (tx) => {
+            const created = await tx.uploadedFile.create({
+              data: { ...data, status: "QUEUED", mappingVersionId: mapping.id },
+              include: fileInclude,
+            });
+            await tx.processingJob.create({
+              data: {
+                type: "INGEST_FILE",
+                entityType: "UPLOADED_FILE",
+                entityId: fileId,
+                params: { columnMap: mapping.columnMap },
+                createdById: userId,
+              },
+            });
+            return created;
+          })
+        : await prisma.uploadedFile.create({
+            data: { ...data, status: "NEEDS_MAPPING" },
+            include: fileInclude,
+          });
     } catch (err) {
       await removeFileQuietly(resolveInside(env.UPLOAD_DIR, storagePath));
       if (isUniqueViolation(err)) return duplicateResult(index, file, item, userId, batchId);
@@ -265,6 +307,28 @@ export function createUploadsService({ prisma, audit }: UploadsServiceDeps) {
     });
 
     return { index, fileName, status: "ACCEPTED", file: toUploadedFileDto(row) };
+  }
+
+  /** Latest processing job of each file, in one query. */
+  async function latestJobs(fileIds: string[]): Promise<Map<string, UploadJobDto>> {
+    const result = new Map<string, UploadJobDto>();
+    if (fileIds.length === 0) return result;
+    const jobs = await prisma.processingJob.findMany({
+      where: { entityType: "UPLOADED_FILE", entityId: { in: fileIds } },
+      orderBy: { queuedAt: "desc" },
+      select: { entityId: true, status: true, stage: true, progressPct: true, errorMessage: true },
+    });
+    for (const job of jobs) {
+      if (job.entityId && !result.has(job.entityId)) {
+        result.set(job.entityId, {
+          status: job.status,
+          stage: job.stage,
+          progressPct: job.progressPct,
+          errorMessage: job.errorMessage,
+        });
+      }
+    }
+    return result;
   }
 
   async function processUpload({
@@ -350,13 +414,18 @@ export function createUploadsService({ prisma, audit }: UploadsServiceDeps) {
       rows.length > query.limit && last
         ? encodeCursor({ uploadedAt: last.uploadedAt, id: last.id })
         : null;
-    return { items: page.map(toUploadedFileDto), nextCursor };
+    const jobs = await latestJobs(page.map((row) => row.id));
+    return {
+      items: page.map((row) => toUploadedFileDto(row, jobs.get(row.id) ?? null)),
+      nextCursor,
+    };
   }
 
   async function getUpload(id: string): Promise<UploadedFileDto> {
     const row = await prisma.uploadedFile.findUnique({ where: { id }, include: fileInclude });
     if (!row) throw new AppError("NOT_FOUND", 404, "Upload not found.");
-    return toUploadedFileDto(row);
+    const jobs = await latestJobs([row.id]);
+    return toUploadedFileDto(row, jobs.get(row.id) ?? null);
   }
 
   return { processUpload, listUploads, getUpload };
