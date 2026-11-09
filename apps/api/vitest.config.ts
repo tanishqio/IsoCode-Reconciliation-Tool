@@ -11,6 +11,7 @@ export default defineConfig({
     env: {
       NODE_ENV: "test",
       LOG_LEVEL: "info",
+      BCRYPT_COST: "4",
       // Never connected to: unit tests must not touch a database.
       DATABASE_URL: "postgresql://unit:unit@localhost:5432/unit_never_connected",
     },

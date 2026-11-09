@@ -11,6 +11,9 @@ const MANAGED_KEYS = [
   "UPLOAD_TEMP_DIR",
   "MAX_UPLOAD_FILE_BYTES",
   "MAX_UPLOAD_FILES",
+  "WORKER_POLL_INTERVAL_MS",
+  "WORKER_HEARTBEAT_INTERVAL_MS",
+  "WORKER_STALE_AFTER_MS",
 ];
 const VALID_URL = "postgresql://user:pw@localhost:5433/db";
 
@@ -94,6 +97,20 @@ describe("environment validation: invalid input stops the process", () => {
       "MAX_UPLOAD_FILES zero",
       { DATABASE_URL: VALID_URL, MAX_UPLOAD_FILES: "0" },
       "MAX_UPLOAD_FILES",
+    ],
+    [
+      "WORKER_POLL_INTERVAL_MS too small",
+      { DATABASE_URL: VALID_URL, WORKER_POLL_INTERVAL_MS: "1" },
+      "WORKER_POLL_INTERVAL_MS",
+    ],
+    [
+      "WORKER_STALE_AFTER_MS under 3 heartbeats",
+      {
+        DATABASE_URL: VALID_URL,
+        WORKER_HEARTBEAT_INTERVAL_MS: "5000",
+        WORKER_STALE_AFTER_MS: "10000",
+      },
+      "WORKER_STALE_AFTER_MS",
     ],
   ];
 
