@@ -31,6 +31,7 @@ model User {
   uploadedFiles UploadedFile[]
   sessions      Session[]
   rateCards     RateCard[]
+  auditLogs     AuditLog[]
 
   // Part 4: mappings this person proposed or approved.
   mappingsCreated  MappingVersion[] @relation("MappingCreatedBy")
@@ -625,4 +626,33 @@ model ReconciliationSettings {
   updatedAt         DateTime @updatedAt
 
   @@map("reconciliation_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Part 12: audit trail
+//
+// Append only: the application never updates or deletes a row. It holds who did what and to which
+// record, as ids, codes and counts. It never holds customer data, file names, e-mail addresses or
+// free text typed by a person (see modules/audit, which removes such keys before saving).
+// `action` is plain text, checked in code against a list, so adding an action in a later part needs
+// no database migration.
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  // Empty for a failed sign-in, and when the person's account was later removed.
+  userId     String?  @db.Uuid
+  action     String
+  entityType String
+  entityId   String?
+  meta       Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@map("audit_logs")
 }

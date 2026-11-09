@@ -59,6 +59,8 @@ const schema = z
       .default(15),
     // Failed sign-in attempts allowed per IP address in 15 minutes (separate from the lock above).
     LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(10_000).default(20),
+    // Part 12: requests allowed per IP address per minute across the whole API (a general brake).
+    API_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(10).max(100_000).default(600),
     // Part 4: the AI that proposes column mappings. "none" = rule-based suggestions only.
     AI_PROVIDER: z.enum(["none", "openai-compatible"]).default("none"),
     AI_API_KEY: z.string().min(1).optional(),
