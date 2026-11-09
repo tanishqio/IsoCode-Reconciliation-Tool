@@ -30,6 +30,11 @@ model User {
   uploadBatches UploadBatch[]
   uploadedFiles UploadedFile[]
   sessions      Session[]
+  rateCards     RateCard[]
+
+  // Part 4: mappings this person proposed or approved.
+  mappingsCreated  MappingVersion[] @relation("MappingCreatedBy")
+  mappingsApproved MappingVersion[] @relation("MappingApprovedBy")
 
   @@map("users")
 }
@@ -121,6 +126,20 @@ model Source {
   fileTypes     SourceFileType[]
   uploadedFiles UploadedFile[]
 
+  mappingVersions MappingVersion[]
+
+  // Part 3: rows loaded from this source.
+  channelOrders   CustomerOrder[]     @relation("OrderChannel")
+  courierOrders   CustomerOrder[]     @relation("OrderCourier")
+  settlementLines SettlementLine[]
+  codRemittances  CodRemittanceLine[]
+  freightLines    FreightLine[]
+  returnScans     ReturnScan[]
+
+  // Part 5: price lists for this channel, or for this courier.
+  channelRateCards RateCard[] @relation("RateCardChannel")
+  courierRateCards RateCard[] @relation("RateCardCourier")
+
   @@map("sources")
 }
 
@@ -170,7 +189,7 @@ model UploadedFile {
   detectedRowCount Int?
   warning          String?
   status           FileStatus @default(NEEDS_MAPPING)
-  // Plain column for now. The foreign key to mapping_versions is added in Part 4.
+  // The approved mapping this file was (or will be) read with. Set when a mapping is approved.
   mappingVersionId String?    @db.Uuid
   rowsAccepted     Int?
   rowsRejected     Int?
@@ -182,6 +201,16 @@ model UploadedFile {
   batch      UploadBatch @relation(fields: [batchId], references: [id])
   source     Source      @relation(fields: [sourceId], references: [id])
   uploadedBy User        @relation(fields: [uploadedById], references: [id])
+
+  mappingVersion MappingVersion? @relation(fields: [mappingVersionId], references: [id])
+
+  // Part 3: everything read from this file. Deleting the file deletes its rows.
+  customerOrders  CustomerOrder[]
+  settlementLines SettlementLine[]
+  codRemittances  CodRemittanceLine[]
+  freightLines    FreightLine[]
+  returnScans     ReturnScan[]
+  rejectedRows    RejectedRow[]
 
   // The database itself blocks an exact duplicate for the same source and file type.
   @@unique([sourceId, fileType, sha256])
@@ -213,4 +242,387 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+// ---------------------------------------------------------------------------
+// Part 3: parsing and ingestion (staging tables, see docs/database-design.md)
+//
+// Money is stored in rupees as Decimal(14,2). Customer name, phone and address have no column
+// anywhere: only the columns named in the mapping are ever read from a file.
+// Every row keeps its source file and row number, because the evidence export needs them.
+// Row numbers are spreadsheet row numbers: the header is usually row 1, the first data row row 2.
+// ---------------------------------------------------------------------------
+
+enum PaymentType {
+  COD
+  PREPAID
+}
+
+enum ChargeType {
+  FORWARD
+  REVERSE
+  COD_FEE
+  OTHER
+}
+
+// Set by the matching step (Part 6/8). Every row starts UNMATCHED.
+enum LineMatchStatus {
+  UNMATCHED
+  EXACT
+  SUGGESTED
+  ACCEPTED
+}
+
+// The order master, from the brand's own order data. One row per (channel, order ID).
+model CustomerOrder {
+  id              String      @id @default(uuid()) @db.Uuid
+  sourceFileId    String      @db.Uuid
+  sourceRowNumber Int
+  rowHash         String
+  orderId         String
+  channelSourceId String      @db.Uuid
+  orderDate       DateTime
+  value           Decimal     @db.Decimal(14, 2)
+  paymentType     PaymentType
+  deliveryStatus  String
+  awb             String?
+  courierSourceId String?     @db.Uuid
+  weightGrams     Int?
+  deliveredAt     DateTime?
+  returnedAt      DateTime?
+  createdAt       DateTime    @default(now())
+
+  sourceFile UploadedFile @relation(fields: [sourceFileId], references: [id], onDelete: Cascade)
+  channel    Source       @relation("OrderChannel", fields: [channelSourceId], references: [id])
+  courier    Source?      @relation("OrderCourier", fields: [courierSourceId], references: [id])
+
+  // Part 6: the reconciliation answer for this order.
+  result OrderResult?
+
+  @@unique([channelSourceId, orderId])
+  @@index([sourceFileId])
+  @@index([awb])
+  @@index([orderId])
+  @@map("customer_orders")
+}
+
+// Marketplace and quick-commerce payout lines. TCS and TDS have their own columns.
+model SettlementLine {
+  id              String          @id @default(uuid()) @db.Uuid
+  sourceFileId    String          @db.Uuid
+  sourceRowNumber Int
+  rowHash         String          @unique
+  orderIdRaw      String?
+  orderPk         String?         @db.Uuid
+  matchStatus     LineMatchStatus @default(UNMATCHED)
+  sourceId        String          @db.Uuid
+  lineRef         String?
+  settledOn       DateTime
+  lineType        String
+  netReceived     Decimal         @db.Decimal(14, 2)
+  tcs             Decimal         @default(0) @db.Decimal(14, 2)
+  tds             Decimal         @default(0) @db.Decimal(14, 2)
+  otherDeductions Decimal         @default(0) @db.Decimal(14, 2)
+  createdAt       DateTime        @default(now())
+
+  sourceFile UploadedFile @relation(fields: [sourceFileId], references: [id], onDelete: Cascade)
+  source     Source       @relation(fields: [sourceId], references: [id])
+
+  @@unique([sourceId, lineRef])
+  @@index([sourceFileId])
+  @@index([orderIdRaw])
+  @@map("settlement_lines")
+}
+
+// COD cash sent by courier aggregators.
+model CodRemittanceLine {
+  id                 String          @id @default(uuid()) @db.Uuid
+  sourceFileId       String          @db.Uuid
+  sourceRowNumber    Int
+  rowHash            String          @unique
+  orderIdRaw         String?
+  orderPk            String?         @db.Uuid
+  matchStatus        LineMatchStatus @default(UNMATCHED)
+  aggregatorSourceId String          @db.Uuid
+  awb                String?
+  remittanceRef      String?
+  remittedOn         DateTime
+  remittedAmount     Decimal         @db.Decimal(14, 2)
+  createdAt          DateTime        @default(now())
+
+  sourceFile UploadedFile @relation(fields: [sourceFileId], references: [id], onDelete: Cascade)
+  aggregator Source       @relation(fields: [aggregatorSourceId], references: [id])
+
+  @@unique([aggregatorSourceId, remittanceRef, awb])
+  @@index([sourceFileId])
+  @@index([orderIdRaw])
+  @@index([awb])
+  @@map("cod_remittance_lines")
+}
+
+// Courier freight invoice lines.
+model FreightLine {
+  id                 String          @id @default(uuid()) @db.Uuid
+  sourceFileId       String          @db.Uuid
+  sourceRowNumber    Int
+  rowHash            String          @unique
+  orderIdRaw         String?
+  orderPk            String?         @db.Uuid
+  matchStatus        LineMatchStatus @default(UNMATCHED)
+  aggregatorSourceId String          @db.Uuid
+  invoiceNo          String
+  awb                String?
+  chargeType         ChargeType
+  billedWeightGrams  Int?
+  billedAmount       Decimal         @db.Decimal(14, 2)
+  chargedOn          DateTime?
+  createdAt          DateTime        @default(now())
+
+  sourceFile UploadedFile @relation(fields: [sourceFileId], references: [id], onDelete: Cascade)
+  aggregator Source       @relation(fields: [aggregatorSourceId], references: [id])
+
+  @@index([sourceFileId])
+  @@index([orderIdRaw])
+  @@index([awb])
+  @@map("freight_lines")
+}
+
+// Warehouse receipt scans for returned parcels.
+model ReturnScan {
+  id                String          @id @default(uuid()) @db.Uuid
+  sourceFileId      String          @db.Uuid
+  sourceRowNumber   Int
+  rowHash           String          @unique
+  orderIdRaw        String?
+  orderPk           String?         @db.Uuid
+  matchStatus       LineMatchStatus @default(UNMATCHED)
+  warehouseSourceId String          @db.Uuid
+  awb               String?
+  scannedAt         DateTime
+  createdAt         DateTime        @default(now())
+
+  sourceFile UploadedFile @relation(fields: [sourceFileId], references: [id], onDelete: Cascade)
+  warehouse  Source       @relation(fields: [warehouseSourceId], references: [id])
+
+  @@index([sourceFileId])
+  @@index([orderIdRaw])
+  @@index([awb])
+  @@map("return_scans")
+}
+
+// Every row that failed validation, so nothing is dropped silently.
+// rawSnippet holds only the values of the mapped columns, never the other columns of the row.
+model RejectedRow {
+  id         String   @id @default(uuid()) @db.Uuid
+  fileId     String   @db.Uuid
+  rowNumber  Int
+  reasonCode String
+  message    String
+  rawSnippet String?
+  createdAt  DateTime @default(now())
+
+  file UploadedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([fileId, rowNumber])
+  @@map("rejected_rows")
+}
+
+// ---------------------------------------------------------------------------
+// Part 5: rate cards (price lists used to work out the expected amount of an order)
+//
+// The assignment gives no rate values. The cards created by `npm run db:seed:rate-cards` are SAMPLE
+// values for the demo (isSampleData = true), not real partner rates.
+// Money is rupees with two decimals (Decimal(14,2)), like the Part 3 tables, so Part 6 can compare
+// expected and received amounts in the same unit. Percentages are basis points (2000 = 20%).
+// ---------------------------------------------------------------------------
+
+enum RateRuleType {
+  COMMISSION
+  FIXED_FEE
+  FREIGHT_SLAB
+  COD_FEE
+  REVERSE_FREIGHT
+}
+
+// A card is never edited in place: a change makes a new version and the old one becomes SUPERSEDED,
+// so old results can still point at the card that produced them.
+enum RateCardStatus {
+  ACTIVE
+  SUPERSEDED
+}
+
+// One price list for a channel (website, marketplace, quick-commerce app) and, optionally, one courier.
+// At most one ACTIVE card per (channel, courier); the service enforces it inside a transaction.
+model RateCard {
+  id              String         @id @default(uuid()) @db.Uuid
+  channelSourceId String         @db.Uuid
+  courierSourceId String?        @db.Uuid
+  versionNo       Int
+  status          RateCardStatus @default(ACTIVE)
+  effectiveFrom   DateTime?
+  effectiveTo     DateTime?
+  isSampleData    Boolean        @default(false)
+  note            String?
+  createdById     String         @db.Uuid
+  createdAt       DateTime       @default(now())
+
+  channel   Source         @relation("RateCardChannel", fields: [channelSourceId], references: [id])
+  courier   Source?        @relation("RateCardCourier", fields: [courierSourceId], references: [id], onDelete: Restrict)
+  createdBy User           @relation(fields: [createdById], references: [id])
+  rules     RateCardRule[]
+
+  @@unique([channelSourceId, courierSourceId, versionNo])
+  @@index([channelSourceId, courierSourceId, status])
+  @@map("rate_cards")
+}
+
+// One fee inside a rate card.
+//   COMMISSION       basisPoints, a share of the order value
+//   FIXED_FEE        amount, once per order
+//   FREIGHT_SLAB     amount, for orders whose weight is in minWeightGrams..maxWeightGrams (both included,
+//                    empty means no limit)
+//   COD_FEE          amount, only for cash-on-delivery orders (appliesToPayment = COD)
+//   REVERSE_FREIGHT  amount, the charge for a returned order
+model RateCardRule {
+  id               String       @id @default(uuid()) @db.Uuid
+  rateCardId       String       @db.Uuid
+  ruleType         RateRuleType
+  appliesToPayment PaymentType?
+  minWeightGrams   Int?
+  maxWeightGrams   Int?
+  basisPoints      Int?
+  amount           Decimal?     @db.Decimal(14, 2)
+  sortOrder        Int          @default(0)
+
+  rateCard RateCard @relation(fields: [rateCardId], references: [id], onDelete: Cascade)
+
+  @@index([rateCardId])
+  @@map("rate_card_rules")
+}
+
+// ---------------------------------------------------------------------------
+// Part 4: column mapping (saved per source and file type, versioned, approved by a person)
+// ---------------------------------------------------------------------------
+
+enum MappingOrigin {
+  AI
+  FALLBACK
+  MANUAL
+}
+
+enum MappingStatus {
+  PROPOSED
+  ACTIVE
+  SUPERSEDED
+  REJECTED
+}
+
+// A suggested or saved mapping from the columns of a partner's file to our standard fields.
+// Only an ACTIVE mapping is used to read files. One ACTIVE row per source and file type is
+// enforced by a partial unique index (raw SQL in the migration, Prisma cannot express it).
+// versionNo is set when a person approves the mapping, so PROPOSED and REJECTED rows have none.
+model MappingVersion {
+  id               String        @id @default(uuid()) @db.Uuid
+  sourceId         String        @db.Uuid
+  fileType         FileType
+  versionNo        Int?
+  headerSignature  String
+  columnMap        Json
+  ignoredColumns   Json
+  // Per field: where the suggestion came from and how sure it was. Shown in the review screen.
+  fieldInfo        Json?
+  notes            Json?
+  origin           MappingOrigin
+  aiModel          String?
+  status           MappingStatus
+  rolledBackFromId String?       @db.Uuid
+  createdById      String        @db.Uuid
+  approvedById     String?       @db.Uuid
+  approvedAt       DateTime?
+  createdAt        DateTime      @default(now())
+
+  source     Source         @relation(fields: [sourceId], references: [id])
+  createdBy  User           @relation("MappingCreatedBy", fields: [createdById], references: [id])
+  approvedBy User?          @relation("MappingApprovedBy", fields: [approvedById], references: [id])
+  files      UploadedFile[]
+
+  @@unique([sourceId, fileType, versionNo])
+  @@index([sourceId, fileType, status])
+  @@index([headerSignature])
+  @@map("mapping_versions")
+}
+
+// ---------------------------------------------------------------------------
+// Part 6: matching and discrepancy results
+//
+// difference = received - expected, so a loss is NEGATIVE (the assignment's sample rows).
+// received = settlement net + TCS + TDS (tax withheld is added back, it is not leakage)
+//            + COD remittance, and for a returned order minus the return freight billed.
+// ---------------------------------------------------------------------------
+
+enum OrderStatus {
+  SETTLED
+  SHORT_PAID
+  OVERPAID
+  UNPAID_PAST_DUE
+  FREIGHT_OVERCHARGED
+  RETURN_NOT_RECEIVED
+  PENDING
+  NOT_TRACKED
+  CANNOT_CALCULATE
+}
+
+enum MatchMethod {
+  EXACT
+  NONE
+}
+
+// One row per order, rebuilt by the RECOMPUTE_RESULTS job. The screens read this table.
+model OrderResult {
+  id                String      @id @default(uuid()) @db.Uuid
+  orderPk           String      @unique @db.Uuid
+  jobId             String?     @db.Uuid
+  rateCardId        String?     @db.Uuid
+  rateCardVersionNo Int?
+  expected          Decimal?    @db.Decimal(14, 2)
+  settlementNet     Decimal     @default(0) @db.Decimal(14, 2)
+  tcs               Decimal     @default(0) @db.Decimal(14, 2)
+  tds               Decimal     @default(0) @db.Decimal(14, 2)
+  codRemitted       Decimal     @default(0) @db.Decimal(14, 2)
+  returnFreight     Decimal     @default(0) @db.Decimal(14, 2)
+  received          Decimal?    @db.Decimal(14, 2)
+  difference        Decimal?    @db.Decimal(14, 2)
+  freightExpected   Decimal?    @db.Decimal(14, 2)
+  freightBilled     Decimal     @default(0) @db.Decimal(14, 2)
+  status            OrderStatus
+  // Extra findings, for example ["TAX_ADDED_BACK", "RETURN_DATE_ASSUMED"].
+  flags             Json
+  // Why no expected amount could be worked out (NO_RATE_CARD, MISSING_WEIGHT, ...).
+  calcProblem       String?
+  matchMethod       MatchMethod
+  // How many matched lines of each kind: { settlement, codRemittance, freight, returnScan }.
+  lineCounts        Json
+  dueDate           DateTime?
+  asOf              DateTime
+  computedAt        DateTime    @default(now())
+
+  order CustomerOrder @relation(fields: [orderPk], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([difference])
+  @@index([computedAt])
+  @@map("order_results")
+}
+
+// One row of tunable rules. The assignment does not give these numbers, so they are data, not code.
+model ReconciliationSettings {
+  id                Int      @id @default(1)
+  tolerance         Decimal  @default(10) @db.Decimal(14, 2)
+  codDueDays        Int      @default(7)
+  settlementDueDays Int      @default(14)
+  returnWindowDays  Int      @default(7)
+  isSampleData      Boolean  @default(true)
+  updatedAt         DateTime @updatedAt
+
+  @@map("reconciliation_settings")
 }
