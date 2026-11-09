@@ -9,6 +9,16 @@ import { createAuthMiddleware } from "./modules/auth/auth.middleware.js";
 import { createAuthRouter, createLoginRateLimiter } from "./modules/auth/auth.routes.js";
 import { createAuthService } from "./modules/auth/auth.service.js";
 import { healthRouter } from "./modules/health/health.routes.js";
+import { createRateCardsRouter } from "./modules/rate-cards/rate-cards.routes.js";
+import { createRateCardsService } from "./modules/rate-cards/rate-cards.service.js";
+import {
+  createConfiguredSuggester,
+  createFileMappingRouter,
+  createMappingsRouter,
+} from "./modules/mapping/mapping.routes.js";
+import { createMappingService } from "./modules/mapping/mapping.service.js";
+import { createIngestionRouter } from "./modules/ingestion/ingestion.routes.js";
+import { createIngestionService } from "./modules/ingestion/ingestion.service.js";
 import { createSourcesRouter } from "./modules/sources/sources.routes.js";
 import { createSourcesService } from "./modules/sources/sources.service.js";
 import { createUploadsRouter } from "./modules/uploads/uploads.routes.js";
@@ -61,9 +71,23 @@ export function createApp(options: AppOptions = {}) {
     "/api/sources",
     createSourcesRouter({ service: createSourcesService({ prisma }), guards }),
   );
+  const mappingService = createMappingService({ prisma, suggester: createConfiguredSuggester() });
+  app.use("/api/uploads", createFileMappingRouter({ service: mappingService, guards }));
+  app.use("/api/mappings", createMappingsRouter({ service: mappingService, guards }));
+  app.use(
+    "/api/uploads",
+    createIngestionRouter({ service: createIngestionService({ prisma }), guards }),
+  );
   app.use(
     "/api/uploads",
     createUploadsRouter({ service: createUploadsService({ prisma }), guards }),
+  );
+
+  // Rate cards: both roles can read (the co-founder's screen is view-only); only the finance
+  // executive can create a card or make a new version. The router checks that itself.
+  app.use(
+    "/api/rate-cards",
+    createRateCardsRouter({ service: createRateCardsService({ prisma }), guards }),
   );
 
   app.use(notFoundHandler);

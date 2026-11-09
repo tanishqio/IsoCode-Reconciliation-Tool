@@ -26,7 +26,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "db:generate": "npm run db:generate -w @leaklens/api"
+    "db:generate": "npm run db:generate -w @leaklens/api",
+    "db:seed": "npm run db:seed -w @leaklens/api"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

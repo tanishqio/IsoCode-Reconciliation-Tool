@@ -18,7 +18,8 @@
     "db:studio": "prisma studio",
     "db:seed:sources": "tsx src/db/seed-sources.ts",
     "db:seed:users": "tsx src/db/seed-users.ts",
-    "db:seed": "npm run db:seed:sources && npm run db:seed:users",
+    "db:seed:rate-cards": "tsx src/db/seed-rate-cards.ts",
+    "db:seed": "npm run db:seed:sources && npm run db:seed:users && npm run db:seed:rate-cards",
     "test:part2": "vitest run tests/unit/part2 && vitest run --config vitest.integration.config.ts tests/integration/part2"
   },
   "dependencies": {
