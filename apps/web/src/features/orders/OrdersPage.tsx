@@ -1,10 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { EmptyState, ErrorState, LoadingState } from "../../components/feedback";
 import { Badge, Button, Money, PageHeader, SelectField, TextField, cn } from "../../components/ui";
 import { getErrorMessage, isApiError } from "../../lib/api-error";
 import { useCurrentUser } from "../auth/use-current-user";
+import { FilterChip } from "./FilterChip";
 import { OrderDrawer } from "./OrderDrawer";
+import { ReturnsTab } from "./ReturnsTab";
 import {
   getStatus,
   getSummary,
@@ -36,7 +39,7 @@ const stickyFirst =
 /** How often the page refreshes while a recalculation is running. */
 const REFRESH_WHILE_RUNNING_MS = 1500;
 
-export function OrdersPage() {
+function AllOrdersTab() {
   const user = useCurrentUser();
   const canRecalculate = user?.role === "FINANCE_EXECUTIVE";
   const queryClient = useQueryClient();
@@ -105,11 +108,6 @@ export function OrdersPage() {
 
   return (
     <>
-      <PageHeader
-        title="Orders"
-        description="For every order: what we should have received, what we did receive, and the difference. A loss is a negative number."
-      />
-
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-cell text-muted" aria-live="polite">
@@ -319,28 +317,47 @@ export function OrdersPage() {
   );
 }
 
-function FilterChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+/** The Orders screen: every order with its result, and the returns tracker as a second tab. */
+export function OrdersPage() {
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") === "returns" ? "returns" : "all";
+  const choose = (next: "all" | "returns") =>
+    setParams(next === "all" ? {} : { tab: next }, { replace: true });
   return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        "h-8 rounded-ui border px-3 text-cell",
-        active
-          ? "border-transparent bg-accent-tint font-medium text-accent"
-          : "border-border-strong bg-page text-ink-2 hover:bg-hover",
-      )}
-    >
-      {children}
-    </button>
+    <>
+      <PageHeader
+        title="Orders"
+        description="For every order: what we should have received, what we did receive, and the difference. A loss is a negative number."
+      />
+      <div
+        role="tablist"
+        aria-label="Orders views"
+        className="mb-5 flex gap-1 border-b border-border"
+      >
+        {(
+          [
+            ["all", "All orders"],
+            ["returns", "Returns"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => choose(key)}
+            className={cn(
+              "-mb-px h-9 border-b-2 px-3 text-cell",
+              tab === key
+                ? "border-accent font-medium text-accent"
+                : "border-transparent text-ink-2 hover:text-ink",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "returns" ? <ReturnsTab /> : <AllOrdersTab />}
+    </>
   );
 }
