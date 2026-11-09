@@ -59,8 +59,19 @@ const schema = z
       .default(15),
     // Failed sign-in attempts allowed per IP address in 15 minutes (separate from the lock above).
     LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(10_000).default(20),
+    // Part 4: the AI that proposes column mappings. "none" = rule-based suggestions only.
+    AI_PROVIDER: z.enum(["none", "openai-compatible"]).default("none"),
+    AI_API_KEY: z.string().min(1).optional(),
+    AI_BASE_URL: z.string().url().default("https://api.openai.com/v1"),
+    AI_MODEL: z.string().min(1).default("gpt-4o-mini"),
+    AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(20_000),
+
     // bcrypt work factor. 12 is a sensible default; tests use 4 to stay fast.
     BCRYPT_COST: z.coerce.number().int().min(4).max(15).default(12),
+  })
+  .refine((value) => value.AI_PROVIDER === "none" || value.AI_API_KEY !== undefined, {
+    path: ["AI_API_KEY"],
+    message: "is required when AI_PROVIDER is not none",
   })
   .refine((value) => value.WORKER_STALE_AFTER_MS >= value.WORKER_HEARTBEAT_INTERVAL_MS * 3, {
     // Otherwise a healthy running job could be failed as stale between two heartbeats.
