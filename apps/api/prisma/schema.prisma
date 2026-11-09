@@ -37,6 +37,10 @@ model User {
   mappingsCreated  MappingVersion[] @relation("MappingCreatedBy")
   mappingsApproved MappingVersion[] @relation("MappingApprovedBy")
 
+  // Parts 8 and 10: suggestions decided and claims exported by this person.
+  suggestionsDecided MatchSuggestion[] @relation("SuggestionDecidedBy")
+  claimsExported     Claim[]           @relation("ClaimExportedBy")
+
   @@map("users")
 }
 
@@ -44,6 +48,7 @@ enum JobType {
   INGEST_FILE
   RECOMPUTE_RESULTS
   BUILD_CLAIMS
+  SUGGEST_MATCHES
 }
 
 enum JobStatus {
@@ -128,6 +133,7 @@ model Source {
   uploadedFiles UploadedFile[]
 
   mappingVersions MappingVersion[]
+  claims          Claim[]
 
   // Part 3: rows loaded from this source.
   channelOrders   CustomerOrder[]     @relation("OrderChannel")
@@ -298,7 +304,9 @@ model CustomerOrder {
   courier    Source?      @relation("OrderCourier", fields: [courierSourceId], references: [id])
 
   // Part 6: the reconciliation answer for this order.
-  result OrderResult?
+  result           OrderResult?
+  claimItems       ClaimItem[]
+  matchSuggestions MatchSuggestion[]
 
   @@unique([channelSourceId, orderId])
   @@index([sourceFileId])
@@ -575,6 +583,7 @@ enum OrderStatus {
 
 enum MatchMethod {
   EXACT
+  REVIEW_ACCEPTED
   NONE
 }
 
@@ -655,4 +664,121 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([action])
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Part 8: review queue for lines without a usable order ID
+// ---------------------------------------------------------------------------
+
+enum LineKind {
+  SETTLEMENT
+  COD_REMITTANCE
+  FREIGHT
+  RETURN_SCAN
+}
+
+enum SuggestionOrigin {
+  RULES
+  AI
+}
+
+// SUPERSEDED: the system closed it because another suggestion for the same line was accepted.
+// A suggestion is never ACCEPTED or REJECTED except by a person.
+enum SuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  SUPERSEDED
+}
+
+// A proposed order for a line that could not be matched by its ID. The line is one of the four
+// staging tables, named by lineKind and lineId (no foreign key, because it points at several tables).
+model MatchSuggestion {
+  id               String           @id @default(uuid()) @db.Uuid
+  lineKind         LineKind
+  lineId           String           @db.Uuid
+  candidateOrderPk String           @db.Uuid
+  score            Int
+  reasons          Json
+  origin           SuggestionOrigin
+  aiModel          String?
+  status           SuggestionStatus @default(PENDING)
+  decidedById      String?          @db.Uuid
+  decidedAt        DateTime?
+  jobId            String?          @db.Uuid
+  createdAt        DateTime         @default(now())
+
+  candidate CustomerOrder @relation(fields: [candidateOrderPk], references: [id], onDelete: Cascade)
+  decidedBy User?         @relation("SuggestionDecidedBy", fields: [decidedById], references: [id])
+
+  @@unique([lineKind, lineId, candidateOrderPk])
+  @@index([status, score])
+  @@index([lineKind, lineId])
+  @@map("match_suggestions")
+}
+
+// ---------------------------------------------------------------------------
+// Part 10: claims by partner, with the evidence for each order
+// ---------------------------------------------------------------------------
+
+enum ClaimType {
+  SHORT_PAID
+  UNPAID
+  FREIGHT_OVERCHARGE
+  RETURN_NOT_RECEIVED
+}
+
+// OPEN: still collecting findings. EXPORTED: the evidence was handed over (frozen).
+// RECOVERED: money came back (recovered amount recorded). CLOSED: written off or withdrawn.
+enum ClaimStatus {
+  OPEN
+  EXPORTED
+  RECOVERED
+  CLOSED
+}
+
+// One claim list per partner. Findings are added to the partner's OPEN claim; once a claim is
+// exported it is frozen, and later findings go to a new OPEN claim.
+model Claim {
+  id              String      @id @default(uuid()) @db.Uuid
+  claimNo         Int         @unique @default(autoincrement())
+  partnerSourceId String      @db.Uuid
+  status          ClaimStatus @default(OPEN)
+  total           Decimal     @default(0) @db.Decimal(14, 2)
+  recovered       Decimal     @default(0) @db.Decimal(14, 2)
+  itemCount       Int         @default(0)
+  exportedAt      DateTime?
+  exportedById    String?     @db.Uuid
+  closedAt        DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  partner    Source      @relation(fields: [partnerSourceId], references: [id])
+  exportedBy User?       @relation("ClaimExportedBy", fields: [exportedById], references: [id])
+  items      ClaimItem[]
+
+  @@index([partnerSourceId, status])
+  @@index([status])
+  @@map("claims")
+}
+
+// One problem order inside a claim. `evidence` holds everything needed to prove it (the working of
+// the expected amount, each matched line with its file and row). It holds no customer data.
+model ClaimItem {
+  id           String    @id @default(uuid()) @db.Uuid
+  claimId      String    @db.Uuid
+  orderPk      String    @db.Uuid
+  claimType    ClaimType
+  amount       Decimal   @db.Decimal(14, 2)
+  ageBasisDate DateTime
+  ageDays      Int
+  evidence     Json
+  createdAt    DateTime  @default(now())
+
+  claim Claim         @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  order CustomerOrder @relation(fields: [orderPk], references: [id], onDelete: Cascade)
+
+  @@unique([orderPk, claimType])
+  @@index([claimId])
+  @@map("claim_items")
 }
