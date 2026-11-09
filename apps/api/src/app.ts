@@ -21,6 +21,12 @@ import { createApiRateLimiter } from "./middleware/api-rate-limit.js";
 import { registerAuditing } from "./modules/audit/audit.middleware.js";
 import { createAuditRouter } from "./modules/audit/audit.routes.js";
 import { createAuditService } from "./modules/audit/audit.service.js";
+import { createClaimsRouter } from "./modules/claims/claims.routes.js";
+import { createClaimsService } from "./modules/claims/claims.service.js";
+import { createReturnsRouter } from "./modules/returns/returns.routes.js";
+import { createReturnsService } from "./modules/returns/returns.service.js";
+import { createReviewRouter } from "./modules/review/review.routes.js";
+import { createReviewService } from "./modules/review/review.service.js";
 import { createDashboardRouter } from "./modules/dashboard/dashboard.routes.js";
 import { createDashboardService } from "./modules/dashboard/dashboard.service.js";
 import { createRateCardsRouter } from "./modules/rate-cards/rate-cards.routes.js";
@@ -133,6 +139,15 @@ export function createApp(options: AppOptions = {}) {
     createDashboardRouter({ service: createDashboardService({ prisma }), guards }),
   );
   app.use("/api/audit", createAuditRouter({ service: auditService, guards }));
+
+  // Parts 8 to 10: the review queue (executive only), the returns tracker and the claims (both
+  // roles read; only the executive changes anything).
+  app.use("/api/review", createReviewRouter({ service: createReviewService({ prisma }), guards }));
+  app.use(
+    "/api/returns",
+    createReturnsRouter({ service: createReturnsService({ prisma }), guards }),
+  );
+  app.use("/api/claims", createClaimsRouter({ service: createClaimsService({ prisma }), guards }));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

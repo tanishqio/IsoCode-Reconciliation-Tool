@@ -22,6 +22,7 @@ export const AUDIT_ACTIONS = [
   "MATCH_ACCEPTED",
   "MATCH_REJECTED",
   "CLAIM_EXPORTED",
+  "CLAIM_STATUS_CHANGED",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -41,6 +42,7 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   MATCH_ACCEPTED: "Accepted a suggested match",
   MATCH_REJECTED: "Rejected a suggested match",
   CLAIM_EXPORTED: "Exported claim evidence",
+  CLAIM_STATUS_CHANGED: "Changed the status of a claim",
 };
 
 export interface AuditEvent {

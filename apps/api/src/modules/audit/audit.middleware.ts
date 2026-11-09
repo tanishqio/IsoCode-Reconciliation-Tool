@@ -169,4 +169,57 @@ export function registerAuditing(app: Express, record: AuditRecorder): void {
         }
       : null,
   );
+  // Part 8: a person decides a suggested match. Only ids and codes are recorded.
+  watch(
+    app,
+    "post",
+    "/api/review/suggestions/:id/accept",
+    record,
+    ({ req, status, body, userId }) =>
+      ok(status) && userId
+        ? {
+            userId,
+            action: "MATCH_ACCEPTED",
+            entityType: "MATCH_SUGGESTION",
+            entityId: param(req, "id"),
+            meta: { lineKind: field(body, "lineKind") },
+          }
+        : null,
+  );
+
+  watch(app, "post", "/api/review/suggestions/:id/reject", record, ({ req, status, userId }) =>
+    ok(status) && userId
+      ? {
+          userId,
+          action: "MATCH_REJECTED",
+          entityType: "MATCH_SUGGESTION",
+          entityId: param(req, "id"),
+        }
+      : null,
+  );
+
+  // Part 10: the evidence export and the claim status.
+  watch(app, "post", "/api/claims/:id/export", record, ({ req, status, body, userId }) =>
+    ok(status) && userId
+      ? {
+          userId,
+          action: "CLAIM_EXPORTED",
+          entityType: "CLAIM",
+          entityId: param(req, "id"),
+          meta: { itemCount: numberField(body, "itemCount"), total: field(body, "total") },
+        }
+      : null,
+  );
+
+  watch(app, "post", "/api/claims/:id/status", record, ({ req, status, body, userId }) =>
+    ok(status) && userId
+      ? {
+          userId,
+          action: "CLAIM_STATUS_CHANGED",
+          entityType: "CLAIM",
+          entityId: param(req, "id"),
+          meta: { status: field(body, "status"), recovered: field(body, "recovered") },
+        }
+      : null,
+  );
 }
