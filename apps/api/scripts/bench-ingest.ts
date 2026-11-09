@@ -68,6 +68,20 @@ function prepare(): void {
     ]);
   }
 
+  // A settlement file for the same orders: the real total paid per order, dated 10 days after the order
+  // (the date is made up; Olist has no payout date).
+  const settlementRows = ["Settlement Date,Order ID,Net Received,TCS,TDS"];
+  for (const row of body) {
+    const value = row[2];
+    if (value === "") continue;
+    const day = new Date(`${String(row[1]).slice(0, 10)}T00:00:00Z`);
+    day.setUTCDate(day.getUTCDate() + 10);
+    settlementRows.push(
+      `${day.toISOString().slice(0, 10)},${row[0]},${Number(value).toFixed(2)},0.00,0.00`,
+    );
+  }
+  writeFileSync(path.join(dataDir, "bench-settlement.csv"), `${settlementRows.join("\n")}\n`);
+
   const csv = [header, ...body.map((r) => r.map((c) => (typeof c === "number" ? c.toFixed(2) : c)))]
     .map((r) => r.join(","))
     .join("\n");
