@@ -1,0 +1,29 @@
+# Local PostgreSQL for development. Data lives in the named volume "leaklens-db-data",
+# so it survives restarts and "docker compose down". Only "docker compose down -v" deletes it.
+#
+# The password comes from the git-ignored .env file in this folder (see .env.example).
+# Host port 5433 is used so it does not clash with a PostgreSQL service on 5432.
+#
+# Start:  docker compose up -d db
+# Stop:   docker compose stop db
+services:
+  db:
+    image: postgres:17
+    container_name: leaklens-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: leaklens
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the .env file next to docker-compose.yml}
+      POSTGRES_DB: leaklens
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - leaklens-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leaklens -d leaklens"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  leaklens-db-data:

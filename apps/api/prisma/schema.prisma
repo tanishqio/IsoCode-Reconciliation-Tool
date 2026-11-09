@@ -1,0 +1,191 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  FINANCE_EXECUTIVE
+  CO_FOUNDER
+}
+
+// Users table. Two accounts only (one per role), created later by a seed script in Part 1.
+model User {
+  id               String    @id @default(uuid()) @db.Uuid
+  email            String    @unique
+  name             String
+  passwordHash     String
+  role             Role
+  isActive         Boolean   @default(true)
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+  lastLoginAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  jobs          ProcessingJob[]
+  uploadBatches UploadBatch[]
+  uploadedFiles UploadedFile[]
+
+  @@map("users")
+}
+
+enum JobType {
+  INGEST_FILE
+  RECOMPUTE_RESULTS
+  BUILD_CLAIMS
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+// Generic background-work queue. A worker (built in Part 3) picks up QUEUED rows.
+// entityType + entityId point at what the job works on (for example UPLOADED_FILE),
+// without a database foreign key, so this table does not depend on later tables.
+model ProcessingJob {
+  id             String    @id @default(uuid()) @db.Uuid
+  type           JobType
+  entityType     String
+  entityId       String?   @db.Uuid
+  params         Json?
+  status         JobStatus @default(QUEUED)
+  stage          String?
+  progressPct    Int       @default(0)
+  attempt        Int       @default(0)
+  heartbeatAt    DateTime?
+  stageTimingsMs Json?
+  errorMessage   String?
+  createdById    String    @db.Uuid
+  queuedAt       DateTime  @default(now())
+  startedAt      DateTime?
+  finishedAt     DateTime?
+
+  createdBy User @relation(fields: [createdById], references: [id])
+
+  @@index([status, queuedAt])
+  @@index([entityType, entityId])
+  @@map("processing_jobs")
+}
+
+// ---------------------------------------------------------------------------
+// Part 2: sources and file upload (PROPOSED design, see docs/database-design.md)
+// ---------------------------------------------------------------------------
+
+enum SourceKind {
+  WEBSITE
+  MARKETPLACE
+  QUICK_COMMERCE
+  COURIER_AGGREGATOR
+  WAREHOUSE
+}
+
+enum FileType {
+  ORDERS
+  SETTLEMENT
+  COD_REMITTANCE
+  FREIGHT_INVOICE
+  RETURN_SCAN
+}
+
+enum FileFormat {
+  CSV
+  XLS
+  XLSX
+}
+
+enum FileStatus {
+  NEEDS_MAPPING
+  QUEUED
+  PROCESSING
+  COMPLETED
+  COMPLETED_WITH_REJECTS
+  FAILED
+}
+
+// Every outside party: the website, marketplaces, quick-commerce apps, courier aggregators, the warehouse.
+model Source {
+  id        String     @id @default(uuid()) @db.Uuid
+  name      String     @unique
+  kind      SourceKind
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+
+  fileTypes     SourceFileType[]
+  uploadedFiles UploadedFile[]
+
+  @@map("sources")
+}
+
+// Which file types a source may send. Data, not code, so it can change without a deploy.
+model SourceFileType {
+  id       String   @id @default(uuid()) @db.Uuid
+  sourceId String   @db.Uuid
+  fileType FileType
+
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, fileType])
+  @@map("source_file_types")
+}
+
+// One row per upload action (one click on Upload with 1 to 5 files).
+// Duplicate and rejected files create no uploaded_files row, so their counts are kept here.
+model UploadBatch {
+  id             String   @id @default(uuid()) @db.Uuid
+  uploadedById   String   @db.Uuid
+  fileCount      Int
+  acceptedCount  Int      @default(0)
+  duplicateCount Int      @default(0)
+  rejectedCount  Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  uploadedBy User           @relation(fields: [uploadedById], references: [id])
+  files      UploadedFile[]
+
+  @@index([createdAt])
+  @@map("upload_batches")
+}
+
+// One row per accepted file. The original file stays on disk at storagePath.
+// Its rows are read into the staging tables in Part 3.
+model UploadedFile {
+  id               String     @id @default(uuid()) @db.Uuid
+  batchId          String     @db.Uuid
+  sourceId         String     @db.Uuid
+  fileType         FileType
+  originalName     String
+  storagePath      String
+  sizeBytes        BigInt
+  format           FileFormat
+  sha256           String
+  headerSignature  String
+  detectedRowCount Int?
+  warning          String?
+  status           FileStatus @default(NEEDS_MAPPING)
+  // Plain column for now. The foreign key to mapping_versions is added in Part 4.
+  mappingVersionId String?    @db.Uuid
+  rowsAccepted     Int?
+  rowsRejected     Int?
+  rowsDuplicate    Int?
+  uploadedById     String     @db.Uuid
+  uploadedAt       DateTime   @default(now())
+  processedAt      DateTime?
+
+  batch      UploadBatch @relation(fields: [batchId], references: [id])
+  source     Source      @relation(fields: [sourceId], references: [id])
+  uploadedBy User        @relation(fields: [uploadedById], references: [id])
+
+  // The database itself blocks an exact duplicate for the same source and file type.
+  @@unique([sourceId, fileType, sha256])
+  @@index([sourceId, fileType, uploadedAt])
+  @@index([status])
+  @@index([batchId])
+  @@map("uploaded_files")
+}

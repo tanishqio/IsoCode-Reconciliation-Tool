@@ -1,0 +1,30 @@
+# dependencies and builds
+node_modules/
+dist/
+*.tsbuildinfo
+
+# secrets and local config
+.env
+.env.*
+!.env.example
+
+# generated
+apps/api/generated/
+
+# uploaded files (kept out of git, folder is preserved)
+apps/api/storage/uploads/*
+!apps/api/storage/uploads/.gitkeep
+apps/api/storage/tmp/
+.kiro/
+# project notes and Kiro config (not published)
+.kiro/
+docs/
+AGENTS.md
+CLAUDE.md
+
+# logs and OS files
+
+# logs and OS files
+*.log
+.DS_Store
+Thumbs.db
