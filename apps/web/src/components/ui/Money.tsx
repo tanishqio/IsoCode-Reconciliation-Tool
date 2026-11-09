@@ -1,9 +1,12 @@
+import { formatRupees, isNegativeAmount } from "@leaklens/shared";
 import { cn } from "./cn";
-import { formatPaise } from "./format-paise";
 
 export interface MoneyProps {
-  /** Integer paise. null or undefined shows a dash (for example, nothing received yet). */
-  paise: number | bigint | null | undefined;
+  /**
+   * An amount in rupees as text ("1499.00") or a number with at most two decimals.
+   * null or undefined shows a dash (for example, nothing received yet).
+   */
+  amount: string | number | null | undefined;
   /**
    * neutral: a negative amount shows a minus sign in the normal text colour.
    * difference: a negative amount is also red and semibold. Use it only for a Difference column
@@ -15,8 +18,8 @@ export interface MoneyProps {
   className?: string;
 }
 
-export function Money({ paise, tone = "neutral", symbol = true, className }: MoneyProps) {
-  if (paise === null || paise === undefined) {
+export function Money({ amount, tone = "neutral", symbol = true, className }: MoneyProps) {
+  if (amount === null || amount === undefined) {
     return (
       <span className={cn("text-muted", className)}>
         <span aria-hidden="true">{"\u2014"}</span>
@@ -24,7 +27,7 @@ export function Money({ paise, tone = "neutral", symbol = true, className }: Mon
       </span>
     );
   }
-  const atRisk = tone === "difference" && paise < 0;
+  const atRisk = tone === "difference" && isNegativeAmount(amount);
   return (
     <span
       className={cn(
@@ -34,7 +37,7 @@ export function Money({ paise, tone = "neutral", symbol = true, className }: Mon
         className,
       )}
     >
-      {formatPaise(paise, { symbol })}
+      {formatRupees(amount, { symbol })}
     </span>
   );
 }
