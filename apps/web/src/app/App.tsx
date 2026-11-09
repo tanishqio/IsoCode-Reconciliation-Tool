@@ -1,4 +1,11 @@
-// Placeholder. The app shell, routing and providers are built after the design is approved.
+import { RouterProvider } from "react-router-dom";
+import { AppProviders } from "./providers";
+import { router } from "./router";
+
 export function App() {
-  return <div>LeakLens</div>;
+  return (
+    <AppProviders>
+      <RouterProvider router={router} />
+    </AppProviders>
+  );
 }
