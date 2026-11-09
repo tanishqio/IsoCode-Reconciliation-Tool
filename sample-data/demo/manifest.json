@@ -1,0 +1,138 @@
+{
+  "generatedBy": "apps/api/scripts/generate-sample-data.ts",
+  "note": "Synthetic data for the demo. No real customers, partners or amounts.",
+  "options": {
+    "orders": 400,
+    "seed": 2026,
+    "startDate": "2026-08-01",
+    "days": 90
+  },
+  "asOf": "2026-11-13T00:00:00.000Z",
+  "files": [
+    {
+      "name": "orders-website.csv",
+      "source": "Website",
+      "fileType": "ORDERS",
+      "rows": 152
+    },
+    {
+      "name": "orders-marketplace-1.csv",
+      "source": "Marketplace 1",
+      "fileType": "ORDERS",
+      "rows": 48
+    },
+    {
+      "name": "orders-marketplace-2.csv",
+      "source": "Marketplace 2",
+      "fileType": "ORDERS",
+      "rows": 39
+    },
+    {
+      "name": "orders-marketplace-3.csv",
+      "source": "Marketplace 3",
+      "fileType": "ORDERS",
+      "rows": 34
+    },
+    {
+      "name": "orders-quick-commerce-1.csv",
+      "source": "Quick Commerce 1",
+      "fileType": "ORDERS",
+      "rows": 69
+    },
+    {
+      "name": "orders-quick-commerce-2.csv",
+      "source": "Quick Commerce 2",
+      "fileType": "ORDERS",
+      "rows": 58
+    },
+    {
+      "name": "settlement-marketplace-1.csv",
+      "source": "Marketplace 1",
+      "fileType": "SETTLEMENT",
+      "rows": 45
+    },
+    {
+      "name": "settlement-marketplace-2.csv",
+      "source": "Marketplace 2",
+      "fileType": "SETTLEMENT",
+      "rows": 38
+    },
+    {
+      "name": "settlement-marketplace-3.csv",
+      "source": "Marketplace 3",
+      "fileType": "SETTLEMENT",
+      "rows": 33
+    },
+    {
+      "name": "settlement-quick-commerce-1.csv",
+      "source": "Quick Commerce 1",
+      "fileType": "SETTLEMENT",
+      "rows": 67
+    },
+    {
+      "name": "settlement-quick-commerce-2.csv",
+      "source": "Quick Commerce 2",
+      "fileType": "SETTLEMENT",
+      "rows": 52
+    },
+    {
+      "name": "cod-remittance-aggregator-1.csv",
+      "source": "Aggregator 1",
+      "fileType": "COD_REMITTANCE",
+      "rows": 62
+    },
+    {
+      "name": "freight-invoice-aggregator-1.csv",
+      "source": "Aggregator 1",
+      "fileType": "FREIGHT_INVOICE",
+      "rows": 113
+    },
+    {
+      "name": "cod-remittance-aggregator-2.csv",
+      "source": "Aggregator 2",
+      "fileType": "COD_REMITTANCE",
+      "rows": 20
+    },
+    {
+      "name": "freight-invoice-aggregator-2.csv",
+      "source": "Aggregator 2",
+      "fileType": "FREIGHT_INVOICE",
+      "rows": 39
+    },
+    {
+      "name": "return-scans-warehouse.csv",
+      "source": "Warehouse",
+      "fileType": "RETURN_SCAN",
+      "rows": 28
+    }
+  ],
+  "summary": {
+    "orders": 400,
+    "byScenario": {
+      "SAMPLE_ROW": 3,
+      "OK": 281,
+      "SHORT_PAID": 18,
+      "UNPAID": 16,
+      "RETURN_OK": 20,
+      "FREIGHT_OVER": 12,
+      "AWB_ONLY": 18,
+      "RETURN_FREIGHT_OVER": 7,
+      "ORPHAN_PAYMENT": 6,
+      "RETURN_NO_SCAN": 9,
+      "DUPLICATE_ROW": 6,
+      "RECENT_UNPAID": 4
+    },
+    "byStatus": {
+      "UNPAID_PAST_DUE": 23,
+      "SHORT_PAID": 19,
+      "FREIGHT_OVERCHARGED": 20,
+      "NOT_TRACKED": 53,
+      "SETTLED": 272,
+      "RETURN_NOT_RECEIVED": 9,
+      "PENDING": 4
+    },
+    "orphanLines": 6,
+    "duplicateRows": 6,
+    "taxLines": 229
+  }
+}
