@@ -2,6 +2,8 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { ReactElement } from "react";
 import type { RouteObject } from "react-router-dom";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
+import { ClaimsPage } from "../features/claims/ClaimsPage";
+import { ReviewPage } from "../features/review/ReviewPage";
 import { OrdersPage } from "../features/orders/OrdersPage";
 import { MappingPage } from "../features/mapping/MappingPage";
 import { createAuthLoaders } from "../features/auth/auth-loaders";
@@ -18,6 +20,8 @@ import { ROUTE_DEFS, type RouteDef } from "./route-config";
 const BUILT_PAGES: Record<string, () => ReactElement> = {
   uploads: () => <UploadsPage />,
   orders: () => <OrdersPage />,
+  review: () => <ReviewPage />,
+  claims: () => <ClaimsPage />,
   "sources/:sourceId/mapping": () => <MappingPage />,
   "rate-cards": () => <RateCardsPage />,
   dashboard: () => <DashboardPage />,
