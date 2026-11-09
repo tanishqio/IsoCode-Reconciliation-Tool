@@ -1,0 +1,53 @@
+/* Global defaults. Values come from tokens.css. */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    min-height: 100dvh;
+    background-color: var(--color-page);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+    /* Every number, amount, ID and date lines up in columns. */
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Visible blue focus ring for keyboard users, on every focusable element. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  /* The only motion in the app: a short colour change on hover and focus. */
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  [role="tab"],
+  [role="menuitem"] {
+    transition-property: color, background-color, border-color;
+    transition-duration: var(--duration-ui);
+    transition-timing-function: ease-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

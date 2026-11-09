@@ -1,0 +1,72 @@
+/*
+  Design tokens for LeakLens ("Calm ledger", approved 9 Nov 2026).
+
+  This is the one place to change the look. Every value below is a CSS variable, and Tailwind 4
+  turns each one into utilities (bg-sidebar, text-muted, text-cell, rounded-ui, ...).
+  `static` keeps every variable in the built CSS, not only the ones a class happens to use.
+
+  The `initial` lines remove Tailwind's default palette, type scale, radii and shadows, so a class
+  such as bg-gray-100 or text-red-600 does nothing. Components must use the tokens below.
+*/
+@theme static {
+  --color-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+
+  /* Font: Inter only. Self-hosted, see fonts.css. */
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+
+  /* Neutral greys */
+  --color-page: #ffffff;
+  --color-sidebar: #f7f7f8;
+  --color-surface: #fafafa; /* subtle surface, quiet row hover */
+  --color-hover: #f3f4f6; /* hover and badge background */
+  --color-border: #e5e7eb;
+  --color-border-strong: #d1d5db;
+  --color-ink: #0a0a0a; /* main text */
+  --color-ink-2: #374151; /* secondary text, badge text, nav text */
+  --color-muted: #6b7280; /* helper text, table headers (4.8:1 on white) */
+  --color-faint: #9ca3af; /* icons and disabled only: 2.5:1 on white, never for readable text */
+
+  /* The one accent: active nav, links, primary button, focus rings */
+  --color-accent: #1f4fd8;
+  --color-accent-hover: #1a43b8;
+  --color-accent-tint: #eef2ff;
+  --color-on-accent: #ffffff;
+
+  /* Reserved for differences and money at risk (and the error panel) */
+  --color-risk: #b91c1c;
+  --color-risk-tint: #fef2f2;
+
+  /* Backdrop behind the mobile drawer */
+  --color-scrim: rgb(10 10 10 / 0.4);
+
+  /* Type scale (size / line height) */
+  --text-label: 0.75rem; /* 12px: table headers, sidebar group labels, badges */
+  --text-label--line-height: 1rem;
+  --text-cell: 0.8125rem; /* 13px: table cells */
+  --text-cell--line-height: 1.25rem;
+  --text-body: 0.875rem; /* 14px */
+  --text-body--line-height: 1.25rem;
+  --text-section: 1rem; /* 16px: section titles */
+  --text-section--line-height: 1.5rem;
+  --text-title: 1.25rem; /* 20px: page titles */
+  --text-title--line-height: 1.75rem;
+
+  /* One small radius, used everywhere */
+  --radius-ui: 0.375rem; /* 6px */
+
+  /* The only shadow: dropdowns, dialogs and the mobile drawer */
+  --shadow-overlay: 0 10px 30px rgb(10 10 10 / 0.18), 0 2px 6px rgb(10 10 10 / 0.08);
+
+  /* Layout sizes */
+  --size-sidebar: 15rem; /* 240px */
+  --size-topbar: 3.5rem; /* 56px */
+  --size-content-max: 90rem; /* 1440px */
+
+  /* Motion: colour changes only, 120ms (see base.css) */
+  --duration-ui: 120ms;
+}
