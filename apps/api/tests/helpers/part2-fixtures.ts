@@ -82,11 +82,7 @@ export function buildForm(
   };
   if (!options.itemsAfterFiles) appendItems();
   for (const file of files) {
-    form.append(
-      options.fileField ?? "files",
-      new Blob([new Uint8Array(file.data)]),
-      file.name,
-    );
+    form.append(options.fileField ?? "files", new Blob([new Uint8Array(file.data)]), file.name);
   }
   if (options.itemsAfterFiles) appendItems();
   return form;

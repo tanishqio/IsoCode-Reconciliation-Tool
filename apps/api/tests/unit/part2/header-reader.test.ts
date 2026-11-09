@@ -56,7 +56,10 @@ describe("readHeaders: CSV", () => {
   });
 
   it("removes a UTF-8 byte order mark", async () => {
-    const content = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("Order ID,Amount\n1,2\n")]);
+    const content = Buffer.concat([
+      Buffer.from([0xef, 0xbb, 0xbf]),
+      Buffer.from("Order ID,Amount\n1,2\n"),
+    ]);
     expect((await readHeaders(write(content), "CSV")).headers).toEqual(["Order ID", "Amount"]);
   });
 
@@ -88,12 +91,18 @@ describe("readHeaders: CSV", () => {
   });
 
   it("falls back to Windows-1252 when the bytes are not valid UTF-8", async () => {
-    const result = await readHeaders(write(Buffer.from([0x43, 0x61, 0x66, 0xe9, 0x2c, 0x61, 0x0a])), "CSV");
+    const result = await readHeaders(
+      write(Buffer.from([0x43, 0x61, 0x66, 0xe9, 0x2c, 0x61, 0x0a])),
+      "CSV",
+    );
     expect(result.headers).toEqual(["Café", "a"]);
   });
 
   it("reads UTF-16 with a byte order mark and does not guess a row count", async () => {
-    const content = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("Order ID,Amount\n1,2\n", "utf16le")]);
+    const content = Buffer.concat([
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from("Order ID,Amount\n1,2\n", "utf16le"),
+    ]);
     const result = await readHeaders(write(content), "CSV");
     expect(result.headers).toEqual(["Order ID", "Amount"]);
     expect(result.dataRowCount).toBeNull();
@@ -162,17 +171,13 @@ describe("readHeaders: Excel", () => {
     expect(result.warning).toContain("3 sheets");
   });
 
-  it(
-    "warns when an xls sheet is at the 65,536-row limit",
-    async () => {
-      const many: unknown[][] = [["Order ID", "Amount"]];
-      for (let row = 1; row < 65_536; row += 1) many.push([`A${row}`, row]);
-      const result = await readHeaders(write(workbookBuffer(many, "biff8")), "XLS");
-      expect(result.warning).toContain("65,536");
-      expect(result.dataRowCount).toBe(65_535);
-    },
-    120_000,
-  );
+  it("warns when an xls sheet is at the 65,536-row limit", async () => {
+    const many: unknown[][] = [["Order ID", "Amount"]];
+    for (let row = 1; row < 65_536; row += 1) many.push([`A${row}`, row]);
+    const result = await readHeaders(write(workbookBuffer(many, "biff8")), "XLS");
+    expect(result.warning).toContain("65,536");
+    expect(result.dataRowCount).toBe(65_535);
+  }, 120_000);
 
   it("does not warn when an xls sheet is below the limit", async () => {
     const many: unknown[][] = [["Order ID", "Amount"]];
@@ -181,24 +186,32 @@ describe("readHeaders: Excel", () => {
     expect(result.warning).toBeNull();
   });
 
-  it(
-    "does not warn about the limit for xlsx files with more than 65,536 rows",
-    async () => {
-      const many: unknown[][] = [["Order ID", "Amount"]];
-      for (let row = 1; row < 66_000; row += 1) many.push([`A${row}`, row]);
-      const result = await readHeaders(write(workbookBuffer(many, "xlsx")), "XLSX");
-      expect(result.warning).toBeNull();
-      expect(result.dataRowCount).toBe(65_999);
-    },
-    120_000,
-  );
+  it("does not warn about the limit for xlsx files with more than 65,536 rows", async () => {
+    const many: unknown[][] = [["Order ID", "Amount"]];
+    for (let row = 1; row < 66_000; row += 1) many.push([`A${row}`, row]);
+    const result = await readHeaders(write(workbookBuffer(many, "xlsx")), "XLSX");
+    expect(result.warning).toBeNull();
+    expect(result.dataRowCount).toBe(65_999);
+  }, 120_000);
 
   it("reports a sheet whose first row is empty", async () => {
     await expectReadError(write(workbookBuffer([[], ["A1", 100]], "xlsx")), "XLSX", "NO_HEADER");
   });
 
   it("reports a header row with only empty cells", async () => {
-    await expectReadError(write(workbookBuffer([["", " "], ["A1", 100]], "xlsx")), "XLSX", "NO_HEADER");
+    await expectReadError(
+      write(
+        workbookBuffer(
+          [
+            ["", " "],
+            ["A1", 100],
+          ],
+          "xlsx",
+        ),
+      ),
+      "XLSX",
+      "NO_HEADER",
+    );
   });
 
   it("reports a zero-byte file", async () => {
@@ -207,8 +220,13 @@ describe("readHeaders: Excel", () => {
   });
 
   it("reports a file that looks like a spreadsheet but cannot be read", async () => {
-    const broken = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from("this is not a real archive")]);
-    const err = (await readHeaders(write(broken), "XLSX").catch((e: unknown) => e)) as HeaderReadError;
+    const broken = Buffer.concat([
+      Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+      Buffer.from("this is not a real archive"),
+    ]);
+    const err = (await readHeaders(write(broken), "XLSX").catch(
+      (e: unknown) => e,
+    )) as HeaderReadError;
     expect(err).toBeInstanceOf(HeaderReadError);
     expect(["UNREADABLE", "NO_HEADER"]).toContain(err.code);
   });

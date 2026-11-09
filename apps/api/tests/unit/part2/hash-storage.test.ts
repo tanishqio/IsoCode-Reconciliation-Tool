@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
 import express from "express";
@@ -28,14 +28,12 @@ function buildApp(storage: HashStorage, limits: multer.Options["limits"]) {
   const upload = multer({ storage, limits });
   const app = express();
   app.post("/up", upload.array("files", limits?.files ?? 5), (req, res) => {
-    const files = (req.files as Express.Multer.File[]).map(
-      (file): Received => ({
-        sha256: file.sha256,
-        sizeBytes: file.sizeBytes,
-        head: file.headBytes.toString("hex"),
-        tempPath: file.tempPath,
-      }),
-    );
+    const files = (req.files as Express.Multer.File[]).map((file): Received => ({
+      sha256: file.sha256,
+      sizeBytes: file.sizeBytes,
+      head: file.headBytes.toString("hex"),
+      tempPath: file.tempPath,
+    }));
     res.json(files);
   });
   app.use(
@@ -43,6 +41,8 @@ function buildApp(storage: HashStorage, limits: multer.Options["limits"]) {
       err: Error & { code?: string },
       _req: express.Request,
       res: express.Response,
+      // Express only treats a function with four parameters as an error handler.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       _next: express.NextFunction,
     ) => {
       res.status(400).json({ error: err.code ?? err.message });
@@ -65,8 +65,8 @@ afterAll(async () => {
   rmSync(tempDir, { recursive: true, force: true });
 });
 
-beforeEach(async () => {
-  await waitForNoFiles(tempDir);
+beforeEach(() => {
+  rmSync(tempDir, { recursive: true, force: true });
 });
 
 async function send(server: TestServer, files: { name?: string; data: Buffer }[]) {
@@ -103,7 +103,9 @@ describe("hashStorage through multer", () => {
     const data = Buffer.from("same content");
     const first = ((await send(normalServer, [{ data }])).body as Received[])[0];
     const second = ((await send(normalServer, [{ data }])).body as Received[])[0];
-    const other = ((await send(normalServer, [{ data: Buffer.from("same content!") }])).body as Received[])[0];
+    const other = (
+      (await send(normalServer, [{ data: Buffer.from("same content!") }])).body as Received[]
+    )[0];
     expect(second?.sha256).toBe(first?.sha256);
     expect(other?.sha256).not.toBe(first?.sha256);
   });
@@ -123,7 +125,10 @@ describe("hashStorage through multer", () => {
 
   it("keeps several files in one request apart", async () => {
     const files = [Buffer.from("one"), Buffer.from("two"), Buffer.from("three")];
-    const { body } = await send(normalServer, files.map((data) => ({ data })));
+    const { body } = await send(
+      normalServer,
+      files.map((data) => ({ data })),
+    );
     const received = body as Received[];
     expect(received.map((file) => file.sha256)).toEqual(files.map(sha256));
     expect(new Set(received.map((file) => file.tempPath)).size).toBe(3);
@@ -182,7 +187,11 @@ describe("hashStorage engine functions", () => {
       },
     });
     const result = await engineCall((done) =>
-      hashStorage._handleFile({} as express.Request, { stream } as unknown as Express.Multer.File, done),
+      hashStorage._handleFile(
+        {} as express.Request,
+        { stream } as unknown as Express.Multer.File,
+        done,
+      ),
     );
     expect((result.error as Error).message).toBe("connection lost");
     expect(result.info).toBeUndefined();
@@ -191,9 +200,12 @@ describe("hashStorage engine functions", () => {
 
   it("deletes the temp file when multer asks to remove it", async () => {
     const tempPath = path.join(tempDir, "to-remove.part");
+    mkdirSync(tempDir, { recursive: true });
     writeFileSync(tempPath, "data");
     const result = await engineCall((done) =>
-      hashStorage._removeFile({} as express.Request, { tempPath } as Express.Multer.File, (error) => done(error)),
+      hashStorage._removeFile({} as express.Request, { tempPath } as Express.Multer.File, (error) =>
+        done(error),
+      ),
     );
     expect(result.error).toBeNull();
     expect(existsSync(tempPath)).toBe(false);
@@ -202,14 +214,18 @@ describe("hashStorage engine functions", () => {
   it("does not fail when the file to remove is already gone", async () => {
     const tempPath = path.join(tempDir, "never-existed.part");
     const result = await engineCall((done) =>
-      hashStorage._removeFile({} as express.Request, { tempPath } as Express.Multer.File, (error) => done(error)),
+      hashStorage._removeFile({} as express.Request, { tempPath } as Express.Multer.File, (error) =>
+        done(error),
+      ),
     );
     expect(result.error).toBeNull();
   });
 
   it("does not fail when the file was never saved (no temp path)", async () => {
     const result = await engineCall((done) =>
-      hashStorage._removeFile({} as express.Request, {} as Express.Multer.File, (error) => done(error)),
+      hashStorage._removeFile({} as express.Request, {} as Express.Multer.File, (error) =>
+        done(error),
+      ),
     );
     expect(result.error).toBeNull();
   });
@@ -230,7 +246,11 @@ describe("hashStorage when the temp folder cannot be created", () => {
       const { hashStorage: brokenStorage } = await import("../../../src/lib/hash-storage.js");
       const stream = Readable.from([Buffer.from("data")]);
       const result = await engineCall((done) =>
-        brokenStorage._handleFile({} as express.Request, { stream } as unknown as Express.Multer.File, done),
+        brokenStorage._handleFile(
+          {} as express.Request,
+          { stream } as unknown as Express.Multer.File,
+          done,
+        ),
       );
       expect(result.error).toBeInstanceOf(Error);
     } finally {

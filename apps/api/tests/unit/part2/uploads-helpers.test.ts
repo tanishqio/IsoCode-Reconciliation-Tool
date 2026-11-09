@@ -134,8 +134,12 @@ describe("storage helpers", () => {
 
   it("builds a year/month/id.ext path in UTC and lower-cases the extension", () => {
     const id = randomUUID();
-    expect(buildStoragePath(id, ".XLSX", new Date("2026-01-31T23:59:59Z"))).toBe(`2026/01/${id}.xlsx`);
-    expect(buildStoragePath(id, ".csv", new Date("2026-12-01T00:00:00Z"))).toBe(`2026/12/${id}.csv`);
+    expect(buildStoragePath(id, ".XLSX", new Date("2026-01-31T23:59:59Z"))).toBe(
+      `2026/01/${id}.xlsx`,
+    );
+    expect(buildStoragePath(id, ".csv", new Date("2026-12-01T00:00:00Z"))).toBe(
+      `2026/12/${id}.csv`,
+    );
   });
 
   it("refuses a path that leaves the storage folder", () => {
@@ -194,7 +198,9 @@ describe("request user helpers", () => {
   });
 
   it("requireRole throws 401 when nobody is signed in", () => {
-    expect(() => requireRole("CO_FOUNDER")(withUser(), {} as never, () => undefined)).toThrow(AppError);
+    expect(() => requireRole("CO_FOUNDER")(withUser(), {} as never, () => undefined)).toThrow(
+      AppError,
+    );
   });
 });
 

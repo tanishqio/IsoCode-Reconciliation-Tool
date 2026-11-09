@@ -17,12 +17,17 @@ describe("formatFromFileName", () => {
     expect(formatFromFileName(name)).toBe(format);
   });
 
-  it.each(["notes.txt", "noextension", "archive.csv.exe", "data.xlsm", "data.json", ".csv.bak", ""])(
-    "%j is not accepted",
-    (name) => {
-      expect(formatFromFileName(name)).toBeNull();
-    },
-  );
+  it.each([
+    "notes.txt",
+    "noextension",
+    "archive.csv.exe",
+    "data.xlsm",
+    "data.json",
+    ".csv.bak",
+    "",
+  ])("%j is not accepted", (name) => {
+    expect(formatFromFileName(name)).toBeNull();
+  });
 });
 
 describe("checkFileSignature", () => {
@@ -73,8 +78,14 @@ describe("checkFileSignature", () => {
 
   it("rejects text renamed to .xlsx or .xls", () => {
     const text = Buffer.from("order_id,amount\n1,2\n");
-    expect(checkFileSignature("a.xlsx", text)).toMatchObject({ ok: false, reason: "SIGNATURE_MISMATCH" });
-    expect(checkFileSignature("a.xls", text)).toMatchObject({ ok: false, reason: "SIGNATURE_MISMATCH" });
+    expect(checkFileSignature("a.xlsx", text)).toMatchObject({
+      ok: false,
+      reason: "SIGNATURE_MISMATCH",
+    });
+    expect(checkFileSignature("a.xls", text)).toMatchObject({
+      ok: false,
+      reason: "SIGNATURE_MISMATCH",
+    });
   });
 
   it("rejects an xlsx renamed to .xls and an xls renamed to .xlsx", () => {
@@ -90,8 +101,14 @@ describe("checkFileSignature", () => {
   });
 
   it("reports an empty file", () => {
-    expect(checkFileSignature("a.csv", Buffer.alloc(0))).toEqual({ ok: false, reason: "EMPTY_FILE" });
-    expect(checkFileSignature("a.xlsx", Buffer.alloc(0))).toEqual({ ok: false, reason: "EMPTY_FILE" });
+    expect(checkFileSignature("a.csv", Buffer.alloc(0))).toEqual({
+      ok: false,
+      reason: "EMPTY_FILE",
+    });
+    expect(checkFileSignature("a.xlsx", Buffer.alloc(0))).toEqual({
+      ok: false,
+      reason: "EMPTY_FILE",
+    });
   });
 
   it("checks the extension before the content", () => {
