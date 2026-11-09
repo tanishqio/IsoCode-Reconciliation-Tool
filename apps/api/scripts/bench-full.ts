@@ -156,28 +156,53 @@ for (const file of manifest.files) {
   });
 }
 
-async function waitForIdle(): Promise<void> {
+async function waitForIdle(label: string): Promise<void> {
+  const startedWaiting = performance.now();
+  let lastLog = 0;
   for (;;) {
     const open = await prisma.processingJob.count({
       where: { status: { in: ["QUEUED", "RUNNING"] } },
     });
     if (open === 0) return;
+    if (performance.now() - lastLog > 15_000) {
+      lastLog = performance.now();
+      const jobs = await prisma.processingJob.groupBy({
+        by: ["type", "status"],
+        _count: { _all: true },
+      });
+      const running = await prisma.processingJob.findFirst({
+        where: { status: "RUNNING" },
+        select: { type: true, stage: true, progressPct: true },
+      });
+      console.error(
+        `[${label} ${seconds(performance.now() - startedWaiting)} s] ` +
+          jobs.map((job) => `${job.type}:${job.status}=${job._count._all}`).join(" ") +
+          (running ? ` | now ${running.type} ${running.stage ?? ""} ${running.progressPct}%` : ""),
+      );
+    }
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
 }
 
-const worker = startWorker({
-  handlers: jobHandlers,
+// While the files are read, only reading is done. Reading a file also asks for a recalculation, but the
+// recalculation is timed on its own below, so it is not run here in the middle of reading.
+const workerSettings = {
   logger,
   pollIntervalMs: 50,
   heartbeatIntervalMs: 5000,
   staleAfterMs: 600_000,
+};
+const readingWorker = startWorker({
+  ...workerSettings,
+  handlers: { INGEST_FILE: jobHandlers.INGEST_FILE },
 });
 
 // 4. Read all the files ----------------------------------------------------------------------------------
 const ingestStart = performance.now();
-await waitForIdle();
+await waitForIdle("reading files");
 const ingestMs = performance.now() - ingestStart;
+await readingWorker.stop();
+await prisma.processingJob.deleteMany({ where: { type: "RECOMPUTE_RESULTS" } });
 const failedFiles = await prisma.uploadedFile.count({ where: { status: "FAILED" } });
 const rejectedRows = await prisma.rejectedRow.count();
 const counts = {
@@ -201,10 +226,17 @@ const jobSeconds = (type: string) => {
   );
   return { jobs: mine.length, seconds: seconds(total) };
 };
-const jobBreakdown = {
-  readFileJobs: jobSeconds("INGEST_FILE"),
-  recalculationsQueuedWhileReading: jobSeconds("RECOMPUTE_RESULTS"),
-};
+const jobBreakdown = { readFileJobs: jobSeconds("INGEST_FILE") };
+console.error(
+  `Read ${manifest.files.length} files in ${seconds(ingestMs)} s (${failedFiles} failed, ${rejectedRows} rows rejected).`,
+);
+if (process.argv.includes("--stop-after-reading")) {
+  console.error("Stopping after reading, as asked. The data is left in the database.");
+  await prisma.$disconnect();
+  process.exit(0);
+}
+
+const worker = startWorker({ ...workerSettings, handlers: jobHandlers });
 
 // 5. The measured job, several times
 if (analyzeFirst) {
@@ -218,8 +250,17 @@ if (analyzeFirst) {
     await prisma.$executeRawUnsafe(`ANALYZE ${table}`);
   }
 }
-const measured: { wallMs: number; status: string; stages: unknown }[] = [];
+const measured: {
+  wallMs: number;
+  runMs: number;
+  waitedMs: number;
+  status: string;
+  stages: unknown;
+}[] = [];
 for (let run = 0; run < runs; run += 1) {
+  // A finished calculation queues follow-up jobs (claims, suggestions). Let them finish first, so the
+  // next run starts on an idle queue and its time is not mixed with theirs.
+  await waitForIdle(`before run ${run + 1}`);
   // Undo the links so that linking is timed too, as on a first calculation.
   for (const table of [
     "settlement_lines",
@@ -238,12 +279,19 @@ for (let run = 0; run < runs; run += 1) {
     await new Promise((resolve) => setTimeout(resolve, 100));
     job = await prisma.processingJob.findUniqueOrThrow({ where: { id: jobId } });
   }
+  const queuedAt = job.queuedAt.getTime();
+  const began = (job.startedAt ?? job.queuedAt).getTime();
+  const ended = (job.finishedAt ?? new Date()).getTime();
   measured.push({
     wallMs: Math.round(performance.now() - startedAt),
+    runMs: ended - began,
+    waitedMs: began - queuedAt,
     status: job.status,
     stages: job.stageTimingsMs,
   });
-  console.error(`Run ${run + 1}: ${job.status} in ${seconds(measured[run]?.wallMs ?? 0)} s.`);
+  console.error(
+    `Run ${run + 1}: ${job.status} in ${seconds(ended - began)} s (waited ${seconds(began - queuedAt)} s in the queue).`,
+  );
 }
 await worker.stop();
 
@@ -280,7 +328,7 @@ for (const row of results) {
   }
 }
 
-const walls = measured.map((run) => run.wallMs);
+const walls = measured.map((run) => run.runMs);
 const report = {
   when: new Date().toISOString(),
   machine: {
@@ -298,7 +346,7 @@ const report = {
     generateSeconds: seconds(generateMs),
   },
   readingFiles: {
-    wallSecondsIncludingRecalculations: seconds(ingestMs),
+    wallSeconds: seconds(ingestMs),
     ...jobBreakdown,
     failedFiles,
     rejectedRows,
@@ -306,7 +354,9 @@ const report = {
   },
   matchingAndCalculation: {
     runs,
+    // Time the job itself ran, from the moment the worker took it to the moment it finished.
     secondsEachRun: walls.map((ms) => seconds(ms)),
+    secondsWaitingInQueueEachRun: measured.map((run) => seconds(run.waitedMs)),
     secondsMin: seconds(Math.min(...walls)),
     secondsMedian: seconds(median(walls)),
     secondsMax: seconds(Math.max(...walls)),

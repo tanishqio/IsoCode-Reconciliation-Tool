@@ -207,6 +207,7 @@ async function riskFixtures(): Promise<void> {
     });
   }
   // 7. Freight overcharge with no expected freight on file: falls back to the difference (30).
+  // No due date, so the age counts from delivery (29 days), not from the order date (32 days).
   await addResult({
     channel: "Website",
     courier: "Aggregator 2",
@@ -214,7 +215,7 @@ async function riskFixtures(): Promise<void> {
     difference: "-30.00",
     freightBilled: "90",
     freightExpected: null,
-    deliveredDaysAgo: 20,
+    deliveredDaysAgo: 29,
   });
   // 8. A cash-on-delivery order with no courier: the Website is the partner.
   await addResult({
