@@ -39,7 +39,11 @@ export function UploadResults({ outcome }: { outcome: UploadOutcome }) {
                       result.file.detectedRowCount === null
                         ? "Rows not counted"
                         : `${result.file.detectedRowCount} rows found`
-                    }. Its columns need mapping next.`
+                    }. ${
+                      result.file.status === "QUEUED"
+                        ? "Its column names are already mapped, so it is being read now."
+                        : "Its column names are new, so review a mapping next."
+                    }`
                   : result.status === "DUPLICATE"
                     ? `Same content as ${result.existing.originalName}, uploaded on ${formatDateTime(result.existing.uploadedAt)}. Removed, not processed.`
                     : result.message}

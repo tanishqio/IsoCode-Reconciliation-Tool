@@ -7,7 +7,7 @@ export function UploadsPage() {
     <>
       <PageHeader
         title="Uploads"
-        description="Add the reports your partners send. Each file is checked and saved; mapping its columns is the next step."
+        description="Add the reports your partners send. A file with new column names waits for you to review and approve its mapping; after that, files with the same columns are read automatically."
       />
       <div className="flex flex-col gap-8">
         <UploadPanel />
