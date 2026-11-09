@@ -7,7 +7,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:4000",
+      // Set API_PROXY_TARGET to point the dev server at an API on another port.
+      "/api": process.env["API_PROXY_TARGET"] ?? "http://localhost:4000",
     },
   },
 });

@@ -15,6 +15,9 @@ apps/api/generated/
 apps/api/storage/uploads/*
 !apps/api/storage/uploads/.gitkeep
 apps/api/storage/tmp/
+
+# downloaded benchmark data (public Olist files) and its output; never commit
+.bench-data/
 .kiro/
 # project notes and Kiro config (not published)
 .kiro/
