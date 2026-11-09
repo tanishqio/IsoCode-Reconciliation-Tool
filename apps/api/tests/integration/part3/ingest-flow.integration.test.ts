@@ -4,7 +4,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../../../generated/prisma/client.js";
 import type { Worker } from "../../../src/jobs/worker-loop.js";
 import { call, signIn } from "../../helpers/auth-client.js";
@@ -40,6 +40,19 @@ beforeAll(async () => {
     heartbeatIntervalMs: 1000,
     staleAfterMs: 60_000,
   });
+});
+
+// Reading a file also queues a recalculation. Let the worker finish it before the next test empties
+// the tables, or the two would wait on each other.
+afterEach(async () => {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const open = await prisma.processingJob.count({
+      where: { status: { in: ["QUEUED", "RUNNING"] } },
+    });
+    if (open === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 });
 
 afterAll(async () => {
