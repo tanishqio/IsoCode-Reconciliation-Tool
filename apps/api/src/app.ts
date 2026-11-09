@@ -1,23 +1,70 @@
+import cookieParser from "cookie-parser";
 import express from "express";
 import helmet from "helmet";
 import { env } from "./config/env.js";
+import { prisma } from "./db/prisma.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 import { requestLogger } from "./middleware/request-logger.js";
-import { devRouter } from "./modules/dev/dev.routes.js";
+import { createAuthMiddleware } from "./modules/auth/auth.middleware.js";
+import { createAuthRouter, createLoginRateLimiter } from "./modules/auth/auth.routes.js";
+import { createAuthService } from "./modules/auth/auth.service.js";
 import { healthRouter } from "./modules/health/health.routes.js";
+import { createSourcesRouter } from "./modules/sources/sources.routes.js";
+import { createSourcesService } from "./modules/sources/sources.service.js";
+import { createUploadsRouter } from "./modules/uploads/uploads.routes.js";
+import { createUploadsService } from "./modules/uploads/uploads.service.js";
 
-export function createApp() {
+export interface AppOptions {
+  /** Failed sign-in attempts allowed per IP address in 15 minutes. Tests change this. */
+  loginRateLimitMax?: number;
+}
+
+export function createApp(options: AppOptions = {}) {
   const app = express();
   app.disable("x-powered-by");
 
   app.use(requestLogger);
   app.use(helmet());
+  app.use(cookieParser());
   app.use(express.json({ limit: "100kb" }));
 
+  // Public: no sign-in needed.
   app.use("/api/health", healthRouter);
-  if (env.NODE_ENV !== "production") {
-    app.use("/api/dev", devRouter); // TEMPORARY, see modules/dev/dev.routes.ts
-  }
+
+  // Sign-in, "who am I" and sign-out.
+  const sessionTtlMs = env.SESSION_TTL_HOURS * 60 * 60 * 1000;
+  const authService = createAuthService({
+    prisma,
+    bcryptCost: env.BCRYPT_COST,
+    sessionTtlMs,
+    maxFailedAttempts: env.LOGIN_MAX_FAILED_ATTEMPTS,
+    lockMs: env.LOGIN_LOCK_MINUTES * 60 * 1000,
+  });
+  const { authenticate, csrfProtection } = createAuthMiddleware({ service: authService });
+  app.use(
+    "/api/auth",
+    createAuthRouter({
+      service: authService,
+      authenticate,
+      csrfProtection,
+      loginRateLimiter: createLoginRateLimiter(
+        options.loginRateLimitMax ?? env.LOGIN_RATE_LIMIT_MAX,
+      ),
+      sessionTtlMs,
+    }),
+  );
+
+  // Everything below needs a valid session, and a CSRF token on requests that change data.
+  // Each router also checks the role itself (finance executive only).
+  const guards = [authenticate, csrfProtection];
+  app.use(
+    "/api/sources",
+    createSourcesRouter({ service: createSourcesService({ prisma }), guards }),
+  );
+  app.use(
+    "/api/uploads",
+    createUploadsRouter({ service: createUploadsService({ prisma }), guards }),
+  );
 
   app.use(notFoundHandler);
   app.use(errorHandler);
