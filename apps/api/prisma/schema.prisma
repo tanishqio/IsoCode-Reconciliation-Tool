@@ -29,6 +29,7 @@ model User {
   jobs          ProcessingJob[]
   uploadBatches UploadBatch[]
   uploadedFiles UploadedFile[]
+  sessions      Session[]
 
   @@map("users")
 }
@@ -188,4 +189,28 @@ model UploadedFile {
   @@index([status])
   @@index([batchId])
   @@map("uploaded_files")
+}
+
+// ---------------------------------------------------------------------------
+// Part 1: sign-in sessions
+// ---------------------------------------------------------------------------
+
+// One row per signed-in browser. The browser keeps a random token in an HttpOnly cookie; only its
+// SHA-256 hash is stored here, so a leaked database cannot be used to sign in.
+// No IP address or browser string is stored (personal data, and not needed).
+model Session {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  tokenHash  String   @unique
+  // Checked on every request that changes data (cross-site request forgery protection).
+  csrfToken  String
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  expiresAt  DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
 }
