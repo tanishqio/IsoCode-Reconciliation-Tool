@@ -5,10 +5,24 @@ import { env } from "./config/env.js";
 import { prisma } from "./db/prisma.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 import { requestLogger } from "./middleware/request-logger.js";
+import {
+  createOrdersRouter,
+  createReconciliationRouter,
+} from "./modules/reconciliation/reconciliation.routes.js";
+import {
+  createReconciliationService,
+  enqueueRecompute,
+} from "./modules/reconciliation/reconciliation.service.js";
 import { createAuthMiddleware } from "./modules/auth/auth.middleware.js";
 import { createAuthRouter, createLoginRateLimiter } from "./modules/auth/auth.routes.js";
 import { createAuthService } from "./modules/auth/auth.service.js";
 import { healthRouter } from "./modules/health/health.routes.js";
+import { createApiRateLimiter } from "./middleware/api-rate-limit.js";
+import { registerAuditing } from "./modules/audit/audit.middleware.js";
+import { createAuditRouter } from "./modules/audit/audit.routes.js";
+import { createAuditService } from "./modules/audit/audit.service.js";
+import { createDashboardRouter } from "./modules/dashboard/dashboard.routes.js";
+import { createDashboardService } from "./modules/dashboard/dashboard.service.js";
 import { createRateCardsRouter } from "./modules/rate-cards/rate-cards.routes.js";
 import { createRateCardsService } from "./modules/rate-cards/rate-cards.service.js";
 import {
@@ -27,6 +41,8 @@ import { createUploadsService } from "./modules/uploads/uploads.service.js";
 export interface AppOptions {
   /** Failed sign-in attempts allowed per IP address in 15 minutes. Tests change this. */
   loginRateLimitMax?: number;
+  /** API requests allowed per IP address per minute. Tests change this. */
+  apiRateLimitMax?: number;
 }
 
 export function createApp(options: AppOptions = {}) {
@@ -40,6 +56,12 @@ export function createApp(options: AppOptions = {}) {
 
   // Public: no sign-in needed.
   app.use("/api/health", healthRouter);
+
+  // Part 12: a general request limit for everything below, and the audit trail. The audit rules
+  // must be registered before the routers they watch (they only note the outcome; they change nothing).
+  app.use("/api", createApiRateLimiter(options.apiRateLimitMax ?? env.API_RATE_LIMIT_PER_MINUTE));
+  const auditService = createAuditService({ prisma });
+  registerAuditing(app, auditService.record);
 
   // Sign-in, "who am I" and sign-out.
   const sessionTtlMs = env.SESSION_TTL_HOURS * 60 * 60 * 1000;
@@ -80,15 +102,37 @@ export function createApp(options: AppOptions = {}) {
   );
   app.use(
     "/api/uploads",
-    createUploadsRouter({ service: createUploadsService({ prisma }), guards }),
+    createUploadsRouter({
+      service: createUploadsService({ prisma, audit: auditService.record }),
+      guards,
+    }),
   );
 
   // Rate cards: both roles can read (the co-founder's screen is view-only); only the finance
   // executive can create a card or make a new version. The router checks that itself.
   app.use(
     "/api/rate-cards",
-    createRateCardsRouter({ service: createRateCardsService({ prisma }), guards }),
+    createRateCardsRouter({
+      service: createRateCardsService({ prisma }),
+      guards,
+      onChanged: (userId) => enqueueRecompute(prisma, userId),
+    }),
   );
+
+  // Part 6/7: results of matching. Both roles can read; only the executive can recalculate.
+  const reconciliationService = createReconciliationService({ prisma });
+  app.use("/api/orders", createOrdersRouter({ service: reconciliationService, prisma, guards }));
+  app.use(
+    "/api/reconciliation",
+    createReconciliationRouter({ service: reconciliationService, prisma, guards }),
+  );
+
+  // Part 11 and 12: the money-at-risk dashboard (both roles read) and the activity log (co-founder only).
+  app.use(
+    "/api/dashboard",
+    createDashboardRouter({ service: createDashboardService({ prisma }), guards }),
+  );
+  app.use("/api/audit", createAuditRouter({ service: auditService, guards }));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

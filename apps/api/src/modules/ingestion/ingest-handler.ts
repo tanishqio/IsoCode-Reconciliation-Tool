@@ -3,6 +3,7 @@ import type { PrismaClient } from "../../../generated/prisma/client.js";
 import { env } from "../../config/env.js";
 import { JobFailure, type JobHandler } from "../../jobs/job-types.js";
 import { logger } from "../../lib/logger.js";
+import { enqueueRecompute } from "../reconciliation/reconciliation.service.js";
 import { resolveInside } from "../uploads/uploads.storage.js";
 import { resolveColumnMap } from "./fields.js";
 import { readTable, TableReadError, type RawTable } from "./read-table.js";
@@ -109,6 +110,10 @@ export function createIngestHandler(prisma: PrismaClient): JobHandler {
         { timeout: TRANSACTION_TIMEOUT_MS, maxWait: 60_000 },
       );
       await setStage("finishing", 100);
+      // New rows can change every order result, so ask for a recalculation (one at a time).
+      await enqueueRecompute(prisma, job.createdById).catch((err: unknown) =>
+        logger.error({ err, fileId: file.id }, "could not queue the recalculation"),
+      );
     } catch (err) {
       // Nothing from this file was saved (the save is one transaction), so mark it failed.
       await prisma.uploadedFile

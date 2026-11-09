@@ -13,13 +13,19 @@ export interface RateCardsRouterOptions {
   service: RateCardsService;
   /** Sign-in and CSRF checks, added by app.ts. */
   guards?: RequestHandler[];
+  /** Called after a card is created or edited, for example to recalculate order results (Part 6). */
+  onChanged?: (userId: string) => Promise<unknown>;
 }
 
 /**
  * Both roles can read rate cards and use the check panel (the co-founder has a view-only screen).
  * Only the finance executive can create a card or make a new version.
  */
-export function createRateCardsRouter({ service, guards = [] }: RateCardsRouterOptions): Router {
+export function createRateCardsRouter({
+  service,
+  guards = [],
+  onChanged,
+}: RateCardsRouterOptions): Router {
   const router = Router();
   const executiveOnly = requireRole("FINANCE_EXECUTIVE");
 
@@ -42,14 +48,20 @@ export function createRateCardsRouter({ service, guards = [] }: RateCardsRouterO
 
   router.post("/", executiveOnly, async (req, res) => {
     const input = createCardSchema.parse(req.body);
-    res.status(201).json(await service.create(input, getRequestUser(req).id));
+    const user = getRequestUser(req);
+    const created = await service.create(input, user.id);
+    await onChanged?.(user.id).catch(() => undefined); // the card is saved either way
+    res.status(201).json(created);
   });
 
   // "Update" makes a new version; the old one is kept.
   router.put("/:id", executiveOnly, async (req, res) => {
     const { id } = idParamSchema.parse(req.params);
     const input = updateCardSchema.parse(req.body);
-    res.json(await service.createNewVersion(id, input, getRequestUser(req).id));
+    const user = getRequestUser(req);
+    const updated = await service.createNewVersion(id, input, user.id);
+    await onChanged?.(user.id).catch(() => undefined);
+    res.json(updated);
   });
 
   return router;
