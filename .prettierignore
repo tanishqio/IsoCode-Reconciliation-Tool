@@ -3,4 +3,5 @@ dist
 package-lock.json
 apps/api/generated
 apps/api/storage
+sample-data
 *.mmd
