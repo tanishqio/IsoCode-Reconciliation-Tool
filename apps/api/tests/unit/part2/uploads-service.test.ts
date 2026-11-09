@@ -101,6 +101,7 @@ function makePrisma(options: FakeOptions = {}) {
           async () => options.sources ?? [websiteSource],
         ),
       },
+      processingJob: { findMany: vi.fn(async () => []) },
       uploadBatch: {
         create: vi.fn(async () => ({ id: batchId })),
         update: vi.fn(async () => ({})),
