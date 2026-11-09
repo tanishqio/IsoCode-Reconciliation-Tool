@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "worker": "tsx src/worker.ts",
+    "dev:worker": "tsx watch src/worker.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
@@ -14,7 +16,10 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "db:seed:sources": "tsx src/db/seed-sources.ts"
+    "db:seed:sources": "tsx src/db/seed-sources.ts",
+    "db:seed:users": "tsx src/db/seed-users.ts",
+    "db:seed": "npm run db:seed:sources && npm run db:seed:users",
+    "test:part2": "vitest run tests/unit/part2 && vitest run --config vitest.integration.config.ts tests/integration/part2"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
