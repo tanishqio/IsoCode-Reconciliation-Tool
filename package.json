@@ -12,8 +12,10 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @leaklens/api\" \"npm run dev -w @leaklens/web\"",
+    "dev": "concurrently -n api,worker,web -c blue,magenta,green \"npm run dev -w @leaklens/api\" \"npm run dev:worker -w @leaklens/api\" \"npm run dev -w @leaklens/web\"",
     "dev:api": "npm run dev -w @leaklens/api",
+    "dev:worker": "npm run dev:worker -w @leaklens/api",
+    "worker": "npm run worker -w @leaklens/api",
     "dev:web": "npm run dev -w @leaklens/web",
     "build": "npm run build -w @leaklens/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
