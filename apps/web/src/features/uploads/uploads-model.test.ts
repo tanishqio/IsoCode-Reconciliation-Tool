@@ -4,9 +4,13 @@ import {
   MAX_FILES,
   addFiles,
   allowedFileTypes,
+  canProcess,
   canUpload,
   formatBytes,
   hasAcceptedExtension,
+  isInProgress,
+  needsMapping,
+  progressLabel,
   rowsAfterUpload,
   setRowSource,
   type DraftRow,
@@ -144,5 +148,34 @@ describe("formatBytes", () => {
     expect(formatBytes(1023)).toBe("1023 B");
     expect(formatBytes(1536)).toBe("1.5 KB");
     expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
+  });
+});
+
+describe("processing state", () => {
+  const job = (stage: string | null, progressPct: number) =>
+    ({ status: "RUNNING", stage, progressPct, errorMessage: null }) as const;
+
+  it("lets only a failed file be run again; a file with new columns waits for a mapping", () => {
+    expect(canProcess({ status: "FAILED" })).toBe(true);
+    expect(
+      ["NEEDS_MAPPING", "QUEUED", "PROCESSING", "COMPLETED"].some((status) =>
+        canProcess({ status } as never),
+      ),
+    ).toBe(false);
+    expect(needsMapping({ status: "NEEDS_MAPPING" })).toBe(true);
+    expect(needsMapping({ status: "QUEUED" })).toBe(false);
+  });
+
+  it("keeps the list refreshing while the worker has the file", () => {
+    expect(isInProgress({ status: "QUEUED" })).toBe(true);
+    expect(isInProgress({ status: "PROCESSING" })).toBe(true);
+    expect(isInProgress({ status: "COMPLETED" })).toBe(false);
+  });
+
+  it("describes progress in plain words", () => {
+    expect(progressLabel({ status: "QUEUED", job: null })).toBe("Waiting for the worker");
+    expect(progressLabel({ status: "PROCESSING", job: job("saving", 70) })).toBe(
+      "Saving rows, 70%",
+    );
   });
 });

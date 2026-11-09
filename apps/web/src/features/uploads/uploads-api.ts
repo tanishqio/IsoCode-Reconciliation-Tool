@@ -29,6 +29,32 @@ export interface UploadedFile {
   detectedRowCount: number | null;
   uploadedAt: string;
   processedAt: string | null;
+  rowsAccepted: number | null;
+  rowsRejected: number | null;
+  rowsDuplicate: number | null;
+  job: UploadJob | null;
+}
+
+export interface UploadJob {
+  status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
+  stage: string | null;
+  progressPct: number;
+  errorMessage: string | null;
+}
+
+export interface RejectedRow {
+  id: string;
+  rowNumber: number;
+  reasonCode: string;
+  message: string;
+  rawSnippet: string | null;
+}
+
+export interface RejectedRowsPage {
+  items: RejectedRow[];
+  nextAfter: number | null;
+  total: number;
+  reasons: { reasonCode: string; count: number }[];
 }
 
 export type FileResult =
@@ -84,4 +110,20 @@ export function uploadFiles(entries: readonly UploadEntry[]): Promise<UploadOutc
   );
   for (const entry of entries) form.append("files", entry.file, entry.file.name);
   return api.post<UploadOutcome>("/uploads", form, { treatAsSuccess: [409, 422] });
+}
+
+/** Queues a file so the background worker reads its rows. Answers 202 straight away. */
+export function processFile(fileId: string): Promise<{ jobId: string }> {
+  return api.post<{ jobId: string }>(`/uploads/${fileId}/process`);
+}
+
+export function listRejectedRows(
+  fileId: string,
+  after: number | undefined,
+  signal?: AbortSignal,
+): Promise<RejectedRowsPage> {
+  return api.get<RejectedRowsPage>(`/uploads/${fileId}/rejected-rows`, {
+    query: { after, limit: 50 },
+    signal,
+  });
 }
