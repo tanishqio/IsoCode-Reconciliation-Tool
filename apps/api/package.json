@@ -20,7 +20,11 @@
     "db:seed:users": "tsx src/db/seed-users.ts",
     "db:seed:rate-cards": "tsx src/db/seed-rate-cards.ts",
     "db:seed": "npm run db:seed:sources && npm run db:seed:users && npm run db:seed:rate-cards",
-    "test:part2": "vitest run tests/unit/part2 && vitest run --config vitest.integration.config.ts tests/integration/part2"
+    "test:part2": "vitest run tests/unit/part2 && vitest run --config vitest.integration.config.ts tests/integration/part2",
+    "scan:secrets": "tsx scripts/scan-secrets.ts",
+    "sample:generate": "tsx scripts/generate-sample-data.ts",
+    "demo:load": "tsx scripts/load-demo-data.ts",
+    "bench:full": "tsx scripts/bench-full.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
