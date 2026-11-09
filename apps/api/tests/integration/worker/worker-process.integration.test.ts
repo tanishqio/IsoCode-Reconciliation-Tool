@@ -1,6 +1,6 @@
 // Starts the real src/worker.ts as its own process (the way `npm run worker` does) and checks
-// that it connects, takes a queued job and finishes it. No handler is registered yet, so the
-// job must end FAILED with the "No handler" message. The process uses the test database only.
+// that it connects, takes a queued job and finishes it. A BUILD_CLAIMS job on an empty database
+// must end SUCCEEDED. The process uses the test database only.
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -53,8 +53,10 @@ describe("worker process (src/worker.ts)", () => {
     const deadline = Date.now() + 45_000;
     for (;;) {
       const job = await prisma.processingJob.findUniqueOrThrow({ where: { id: queued.id } });
-      if (job.status === "FAILED") {
-        expect(job.errorMessage).toBe("No handler is registered for job type BUILD_CLAIMS.");
+      if (job.status === "SUCCEEDED" || job.status === "FAILED") {
+        // BUILD_CLAIMS has a real handler since Part 10; on an empty database it just finishes.
+        expect(job.status).toBe("SUCCEEDED");
+        expect(job.errorMessage).toBeNull();
         expect(job.attempt).toBe(1);
         expect(job.finishedAt).toBeInstanceOf(Date);
         break;

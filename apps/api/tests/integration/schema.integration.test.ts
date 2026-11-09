@@ -182,11 +182,12 @@ describe("migrated schema: enums", () => {
     expect(await enumLabels("JobStatus")).toEqual(["QUEUED", "RUNNING", "SUCCEEDED", "FAILED"]);
   });
 
-  it("JobType has the three job types", async () => {
+  it("JobType has the four job types", async () => {
     expect(await enumLabels("JobType")).toEqual([
       "INGEST_FILE",
       "RECOMPUTE_RESULTS",
       "BUILD_CLAIMS",
+      "SUGGEST_MATCHES",
     ]);
   });
 });
